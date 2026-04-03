@@ -28,7 +28,7 @@ app.use('*', cors({
   origin: (origin, c) => {
     const configured = (c.env.CORS_ALLOWED_ORIGINS || '')
       .split(',')
-      .map((value) => value.trim())
+      .map((value: string) => value.trim())
       .filter(Boolean);
 
     if (configured.length === 0) {

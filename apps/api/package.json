@@ -14,7 +14,7 @@
     "db:down": "docker compose -f ../../docker-compose.yml down"
   },
   "dependencies": {
-    "@google/genai": "^1.48.0",
+    "@google/generative-ai": "^0.21.0",
     "@neondatabase/serverless": "^0.10.4",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.9.0",
