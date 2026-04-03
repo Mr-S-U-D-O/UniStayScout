@@ -10,3 +10,5 @@
 - Use OpenStreetMap + Leaflet for zero-cost map rendering in MVP
 - Use SSE for lightweight live updates before full websocket upgrade
 - Use in-memory API data for rapid iteration, then migrate to Postgres/PostGIS
+- Use role-aware account onboarding (student/landlord self-registration, admin restricted)
+- Use role-locked dashboards after login instead of manual role switching

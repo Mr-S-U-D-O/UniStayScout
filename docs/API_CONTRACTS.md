@@ -7,6 +7,14 @@
 - GET /api/events
 - Server-sent-events stream for listing, moderation, interest, and review updates
 
+## Authentication
+- GET /api/auth/demo-accounts
+- POST /api/auth/register
+- POST /api/auth/login
+
+## Dashboard Summary
+- GET /api/dashboard-summary?userId=
+
 ## Schools
 - GET /api/schools
 

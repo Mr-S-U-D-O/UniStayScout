@@ -14,3 +14,9 @@
 - Implemented admin moderation queue with approve/reject actions
 - Implemented admin interest lead monitoring dashboard
 - Added server-sent-events endpoint and frontend subscriptions for live refresh
+
+## 0.3.0 - 2026-04-03
+- Added login and registration screen with role-based account creation
+- Added session persistence on frontend and role-locked post-login workspace
+- Added auth endpoints (register/login/demo accounts) on API
+- Added role-based dashboard summary endpoint and summary cards UI

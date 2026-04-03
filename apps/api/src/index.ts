@@ -41,6 +41,7 @@ type Listing = {
 type Interest = {
   id: string;
   listingId: string;
+  studentUserId?: string;
   studentName: string;
   studentPhone: string;
   studentNote: string;
@@ -65,6 +66,19 @@ type StudentProfile = {
 type MapContext = {
   schoolId?: string;
   radiusKm?: number;
+};
+
+type AccountRole = 'student' | 'landlord' | 'admin';
+
+type Account = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+  role: AccountRole;
+  landlordId?: string;
+  createdAt: string;
 };
 
 const schools: School[] = [
@@ -130,6 +144,37 @@ const listings: Listing[] = [
 const interests: Interest[] = [];
 const reviews: Review[] = [];
 
+const accounts: Account[] = [
+  {
+    id: 'usr-admin-1',
+    name: 'System Admin',
+    email: 'admin@unistayscout.local',
+    phone: '+27 11 000 0001',
+    password: 'admin123',
+    role: 'admin',
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'usr-landlord-1',
+    name: 'Bright Rooms SA',
+    email: 'landlord@unistayscout.local',
+    phone: '+27 11 000 0002',
+    password: 'landlord123',
+    role: 'landlord',
+    landlordId: 'landlord-1',
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'usr-student-1',
+    name: 'Lerato Student',
+    email: 'student@unistayscout.local',
+    phone: '+27 71 000 1234',
+    password: 'student123',
+    role: 'student',
+    createdAt: new Date().toISOString()
+  }
+];
+
 const sseClients = new Set<Response>();
 
 function nextId(prefix: string): string {
@@ -161,6 +206,17 @@ function notify(event: string, payload: unknown): void {
   }
 }
 
+function toPublicAccount(account: Account) {
+  return {
+    id: account.id,
+    name: account.name,
+    email: account.email,
+    phone: account.phone,
+    role: account.role,
+    landlordId: account.landlordId
+  };
+}
+
 app.use(cors());
 app.use(express.json());
 
@@ -183,6 +239,134 @@ app.get('/api/events', (req, res) => {
 
 app.get('/api/schools', (_req, res) => {
   res.json({ data: schools });
+});
+
+app.get('/api/auth/demo-accounts', (_req, res) => {
+  res.json({
+    data: [
+      { role: 'admin', email: 'admin@unistayscout.local', password: 'admin123' },
+      { role: 'landlord', email: 'landlord@unistayscout.local', password: 'landlord123' },
+      { role: 'student', email: 'student@unistayscout.local', password: 'student123' }
+    ]
+  });
+});
+
+app.post('/api/auth/register', (req, res) => {
+  const { name, email, phone, password, role } = req.body as {
+    name?: string;
+    email?: string;
+    phone?: string;
+    password?: string;
+    role?: AccountRole;
+  };
+
+  if (!name || !email || !phone || !password || !role) {
+    res.status(400).json({ message: 'name, email, phone, password, and role are required.' });
+    return;
+  }
+
+  if (role === 'admin') {
+    res.status(403).json({ message: 'Admin accounts cannot be self-registered.' });
+    return;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const exists = accounts.some((account) => account.email === normalizedEmail);
+  if (exists) {
+    res.status(409).json({ message: 'An account with this email already exists.' });
+    return;
+  }
+
+  const id = nextId('usr');
+  const now = new Date().toISOString();
+  const account: Account = {
+    id,
+    name: name.trim(),
+    email: normalizedEmail,
+    phone: phone.trim(),
+    password,
+    role,
+    landlordId: role === 'landlord' ? nextId('landlord') : undefined,
+    createdAt: now
+  };
+
+  accounts.push(account);
+  notify('account-created', { accountId: account.id, role: account.role });
+
+  res.status(201).json({
+    data: toPublicAccount(account),
+    token: nextId('token')
+  });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body as { email?: string; password?: string };
+  if (!email || !password) {
+    res.status(400).json({ message: 'email and password are required.' });
+    return;
+  }
+
+  const account = accounts.find((item) => item.email === email.trim().toLowerCase() && item.password === password);
+  if (!account) {
+    res.status(401).json({ message: 'Invalid credentials.' });
+    return;
+  }
+
+  res.json({
+    data: toPublicAccount(account),
+    token: nextId('token')
+  });
+});
+
+app.get('/api/dashboard-summary', (req, res) => {
+  const userId = String(req.query.userId || '');
+  const account = accounts.find((item) => item.id === userId);
+
+  if (!account) {
+    res.status(404).json({ message: 'Account not found.' });
+    return;
+  }
+
+  if (account.role === 'student') {
+    const myInterests = interests.filter((item) => item.studentUserId === account.id);
+    res.json({
+      data: {
+        role: 'student',
+        cards: [
+          { label: 'Interests Sent', value: String(myInterests.length) },
+          { label: 'Approved Listings', value: String(listings.filter((item) => item.status === 'approved').length) },
+          { label: 'Schools Available', value: String(schools.length) }
+        ]
+      }
+    });
+    return;
+  }
+
+  if (account.role === 'landlord') {
+    const mine = listings.filter((item) => item.landlordId === account.landlordId);
+    res.json({
+      data: {
+        role: 'landlord',
+        cards: [
+          { label: 'My Listings', value: String(mine.length) },
+          { label: 'Pending Review', value: String(mine.filter((item) => item.status === 'pending').length) },
+          { label: 'Total Views', value: String(mine.reduce((sum, item) => sum + item.views, 0)) }
+        ]
+      }
+    });
+    return;
+  }
+
+  res.json({
+    data: {
+      role: 'admin',
+      cards: [
+        { label: 'Pending Listings', value: String(listings.filter((item) => item.status === 'pending').length) },
+        { label: 'Total Listings', value: String(listings.length) },
+        { label: 'Student Leads', value: String(interests.length) }
+      ]
+    }
+  });
 });
 
 app.get('/api/listings', (req, res) => {
@@ -286,7 +470,7 @@ app.get('/api/landlords/:landlordId/listings', (req, res) => {
 });
 
 app.post('/api/interests', (req, res) => {
-  const { listingId, studentName, studentPhone, studentNote } = req.body as Partial<Interest>;
+  const { listingId, studentUserId, studentName, studentPhone, studentNote } = req.body as Partial<Interest>;
   if (!listingId || !studentName || !studentPhone) {
     res.status(400).json({ message: 'listingId, studentName and studentPhone are required.' });
     return;
@@ -301,6 +485,7 @@ app.post('/api/interests', (req, res) => {
   const interest: Interest = {
     id: nextId('int'),
     listingId,
+    studentUserId,
     studentName,
     studentPhone,
     studentNote: studentNote || '',

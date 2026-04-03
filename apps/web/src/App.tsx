@@ -55,7 +55,24 @@ type ChatMessage = {
   message: string;
 };
 
+type AuthRole = 'student' | 'landlord' | 'admin';
+
+type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: AuthRole;
+  landlordId?: string;
+};
+
+type DashboardCard = {
+  label: string;
+  value: string;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+const AUTH_STORAGE_KEY = 'unistayscout-auth-user';
 
 const defaultIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -97,7 +114,20 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 function App() {
-  const [role, setRole] = useState<Role>('student');
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [demoAccounts, setDemoAccounts] = useState<Array<{ role: string; email: string; password: string }>>([]);
+  const [authForm, setAuthForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    role: 'student' as Exclude<AuthRole, 'admin'>
+  });
+
+  const role: Role = (authUser?.role || 'student') as Role;
   const [schools, setSchools] = useState<School[]>([]);
   const [selectedSchoolId, setSelectedSchoolId] = useState('uj-auckland-park');
   const [radiusKm, setRadiusKm] = useState(5);
@@ -109,13 +139,13 @@ function App() {
   const [interests, setInterests] = useState<Interest[]>([]);
   const [landlordListings, setLandlordListings] = useState<Listing[]>([]);
 
-  const [studentName, setStudentName] = useState('Lerato Student');
-  const [studentPhone, setStudentPhone] = useState('+27 71 000 1234');
+  const [studentName, setStudentName] = useState('');
+  const [studentPhone, setStudentPhone] = useState('');
   const [studentBudget, setStudentBudget] = useState(4500);
   const [studentRoomType, setStudentRoomType] = useState<'private' | 'shared' | 'any'>('any');
 
-  const [landlordId] = useState('landlord-1');
-  const [landlordName, setLandlordName] = useState('Bright Rooms SA');
+  const landlordId = authUser?.landlordId || '';
+  const [landlordName, setLandlordName] = useState('');
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newPrice, setNewPrice] = useState(3500);
@@ -132,6 +162,7 @@ function App() {
   ]);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState('Live updates connected.');
+  const [dashboardCards, setDashboardCards] = useState<DashboardCard[]>([]);
 
   const selectedSchool = useMemo(
     () => schools.find((item) => item.id === selectedSchoolId) || schools[0],
@@ -143,7 +174,107 @@ function App() {
     [listings, selectedListingId]
   );
 
+  useEffect(() => {
+    const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!saved) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(saved) as AuthUser;
+      setAuthUser(parsed);
+      setStudentName(parsed.name || '');
+      setStudentPhone(parsed.phone || '');
+      setLandlordName(parsed.name || '');
+    } catch {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    apiGet<{ data: Array<{ role: string; email: string; password: string }> }>('/api/auth/demo-accounts')
+      .then((response) => setDemoAccounts(response.data))
+      .catch(() => setDemoAccounts([]));
+  }, []);
+
+  async function loadDashboardSummary(): Promise<void> {
+    if (!authUser?.id) {
+      setDashboardCards([]);
+      return;
+    }
+
+    const response = await apiGet<{ data: { cards: DashboardCard[] } }>(
+      `/api/dashboard-summary?userId=${encodeURIComponent(authUser.id)}`
+    );
+    setDashboardCards(response.data.cards || []);
+  }
+
+  async function submitLogin(): Promise<void> {
+    setAuthLoading(true);
+    setAuthError('');
+
+    try {
+      const response = await apiPost<{ data: AuthUser; token: string }>('/api/auth/login', {
+        email: authForm.email,
+        password: authForm.password
+      });
+
+      setAuthUser(response.data);
+      setStudentName(response.data.name || '');
+      setStudentPhone(response.data.phone || '');
+      setLandlordName(response.data.name || '');
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(response.data));
+      setStatusMessage(`Welcome back, ${response.data.name}.`);
+      setAuthForm((current) => ({ ...current, password: '' }));
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Login failed.');
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function submitRegister(): Promise<void> {
+    setAuthLoading(true);
+    setAuthError('');
+
+    try {
+      const response = await apiPost<{ data: AuthUser; token: string }>('/api/auth/register', {
+        name: authForm.name,
+        email: authForm.email,
+        phone: authForm.phone,
+        password: authForm.password,
+        role: authForm.role
+      });
+
+      setAuthUser(response.data);
+      setStudentName(response.data.name || '');
+      setStudentPhone(response.data.phone || '');
+      setLandlordName(response.data.name || '');
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(response.data));
+      setStatusMessage(`Account created for ${response.data.role}.`);
+      setAuthForm((current) => ({ ...current, password: '' }));
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Registration failed.');
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  function logout(): void {
+    setAuthUser(null);
+    setDashboardCards([]);
+    setListings([]);
+    setSelectedListingId('');
+    setAuthForm((current) => ({ ...current, password: '' }));
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+
   async function loadListings(): Promise<void> {
+    if (!authUser) {
+      setListings([]);
+      return;
+    }
+
     const params = new URLSearchParams({
       schoolId: selectedSchoolId,
       radiusKm: String(radiusKm),
@@ -170,6 +301,10 @@ function App() {
   }
 
   async function loadLandlordData(): Promise<void> {
+    if (!landlordId) {
+      setLandlordListings([]);
+      return;
+    }
     const response = await apiGet<{ data: Listing[] }>(`/api/landlords/${landlordId}/listings`);
     setLandlordListings(response.data);
   }
@@ -180,7 +315,12 @@ function App() {
   }
 
   async function refreshForRole(): Promise<void> {
+    if (!authUser) {
+      return;
+    }
+
     await loadListings();
+    await loadDashboardSummary();
     if (role === 'admin') {
       await loadAdminData();
     }
@@ -190,6 +330,10 @@ function App() {
   }
 
   useEffect(() => {
+    if (!authUser) {
+      return;
+    }
+
     apiGet<{ data: School[] }>('/api/schools')
       .then((response) => {
         setSchools(response.data);
@@ -198,14 +342,18 @@ function App() {
         }
       })
       .catch(() => setStatusMessage('Unable to load schools. Check API server.'));
-  }, []);
+  }, [authUser]);
 
   useEffect(() => {
+    if (!authUser) {
+      return;
+    }
+
     if (!selectedSchoolId) {
       return;
     }
     refreshForRole().catch(() => setStatusMessage('Data refresh failed.'));
-  }, [selectedSchoolId, radiusKm, role]);
+  }, [authUser, selectedSchoolId, radiusKm, role]);
 
   useEffect(() => {
     if (!selectedListingId) {
@@ -216,6 +364,10 @@ function App() {
   }, [selectedListingId]);
 
   useEffect(() => {
+    if (!authUser) {
+      return;
+    }
+
     const source = new EventSource(`${API_BASE}/api/events`);
 
     source.addEventListener('connected', () => {
@@ -247,7 +399,7 @@ function App() {
     };
 
     return () => source.close();
-  }, [role, selectedListingId, selectedSchoolId, radiusKm]);
+  }, [authUser, role, selectedListingId, selectedSchoolId, radiusKm]);
 
   async function askAssistant(message: string): Promise<void> {
     const nextChat = [...chat, { role: 'user' as const, message }];
@@ -273,12 +425,13 @@ function App() {
   }
 
   async function submitInterest(): Promise<void> {
-    if (!selectedListing) {
+    if (!selectedListing || !authUser) {
       return;
     }
 
     await apiPost('/api/interests', {
       listingId: selectedListing.id,
+      studentUserId: authUser.id,
       studentName,
       studentPhone,
       studentNote: `Interested in ${selectedListing.title}`
@@ -304,6 +457,11 @@ function App() {
   }
 
   async function createListing(): Promise<void> {
+    if (!authUser || !landlordId) {
+      setStatusMessage('Please login as a landlord to submit listings.');
+      return;
+    }
+
     await apiPost('/api/listings', {
       landlordId,
       landlordName,
@@ -334,22 +492,126 @@ function App() {
     await refreshForRole();
   }
 
+  if (!authUser) {
+    return (
+      <main className="auth-screen">
+        <section className="auth-hero panel">
+          <h1>UniStayScout</h1>
+          <p>Sign in to access your role-specific dashboard and map workspace.</p>
+          <ul>
+            <li>Students: discover listings on a live school-centered map.</li>
+            <li>Landlords: publish properties and track moderation status.</li>
+            <li>Admins: approve listings and manage incoming leads.</li>
+          </ul>
+
+          {demoAccounts.length > 0 && (
+            <div className="demo-box">
+              <h3>Demo Accounts</h3>
+              {demoAccounts.map((account) => (
+                <p key={account.email}>
+                  <strong>{account.role}:</strong> {account.email} / {account.password}
+                </p>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="auth-card panel">
+          <div className="auth-tabs">
+            <button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>
+              Login
+            </button>
+            <button
+              type="button"
+              className={authMode === 'register' ? 'active' : ''}
+              onClick={() => setAuthMode('register')}
+            >
+              Create Account
+            </button>
+          </div>
+
+          {authMode === 'register' && (
+            <label>
+              Role
+              <select
+                value={authForm.role}
+                onChange={(event) =>
+                  setAuthForm((current) => ({
+                    ...current,
+                    role: event.target.value as Exclude<AuthRole, 'admin'>
+                  }))
+                }
+              >
+                <option value="student">Student</option>
+                <option value="landlord">Landlord</option>
+              </select>
+            </label>
+          )}
+
+          {authMode === 'register' && (
+            <label>
+              Full Name
+              <input
+                value={authForm.name}
+                onChange={(event) => setAuthForm((current) => ({ ...current, name: event.target.value }))}
+              />
+            </label>
+          )}
+
+          <label>
+            Email
+            <input
+              type="email"
+              value={authForm.email}
+              onChange={(event) => setAuthForm((current) => ({ ...current, email: event.target.value }))}
+            />
+          </label>
+
+          {authMode === 'register' && (
+            <label>
+              Phone
+              <input
+                value={authForm.phone}
+                onChange={(event) => setAuthForm((current) => ({ ...current, phone: event.target.value }))}
+              />
+            </label>
+          )}
+
+          <label>
+            Password
+            <input
+              type="password"
+              value={authForm.password}
+              onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))}
+            />
+          </label>
+
+          {authError && <p className="auth-error">{authError}</p>}
+
+          {authMode === 'login' ? (
+            <button type="button" disabled={authLoading} onClick={() => submitLogin()}>
+              {authLoading ? 'Logging in...' : 'Login'}
+            </button>
+          ) : (
+            <button type="button" disabled={authLoading} onClick={() => submitRegister()}>
+              {authLoading ? 'Creating account...' : 'Create Account'}
+            </button>
+          )}
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar panel">
         <div>
           <h1>UniStayScout MVP</h1>
-          <p>Map-first student housing with AI guidance and admin moderation.</p>
+          <p>
+            Logged in as {authUser.name} ({authUser.role})
+          </p>
         </div>
         <div className="topbar-controls">
-          <label>
-            Role
-            <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
-              <option value="student">Student</option>
-              <option value="landlord">Landlord</option>
-              <option value="admin">Admin</option>
-            </select>
-          </label>
           <label>
             School
             <select value={selectedSchoolId} onChange={(event) => setSelectedSchoolId(event.target.value)}>
@@ -370,10 +632,24 @@ function App() {
               onChange={(event) => setRadiusKm(Number(event.target.value))}
             />
           </label>
+          <button type="button" className="danger" onClick={logout}>
+            Logout
+          </button>
         </div>
       </header>
 
       <section className="status-line">{statusMessage}</section>
+
+      {dashboardCards.length > 0 && (
+        <section className="summary-grid">
+          {dashboardCards.map((card) => (
+            <article key={card.label} className="summary-card panel">
+              <p className="muted">{card.label}</p>
+              <h3>{card.value}</h3>
+            </article>
+          ))}
+        </section>
+      )}
 
       <section className="workspace-grid">
         <aside className="left-sidebar panel">

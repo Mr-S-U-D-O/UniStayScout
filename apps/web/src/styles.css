@@ -59,6 +59,67 @@ h3 {
   grid-template-columns: repeat(3, minmax(180px, 1fr));
   gap: 0.75rem;
   width: min(760px, 100%);
+  align-items: end;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.summary-card h3 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 1rem;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 1.2rem;
+  align-items: center;
+}
+
+.auth-hero ul {
+  margin: 0.8rem 0;
+  padding-left: 1.1rem;
+}
+
+.auth-card {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.auth-tabs .active {
+  background: #0f2a44;
+}
+
+.auth-error {
+  margin: 0;
+  color: #b32f2a;
+  font-weight: 700;
+}
+
+.demo-box {
+  margin-top: 1rem;
+  border: 1px solid #d7e8f8;
+  border-radius: 10px;
+  background: #f7fbff;
+  padding: 0.7rem;
+}
+
+.demo-box p {
+  margin: 0.3rem 0;
 }
 
 label {
@@ -236,11 +297,19 @@ button.danger {
 }
 
 @media (max-width: 840px) {
+  .auth-screen {
+    grid-template-columns: 1fr;
+  }
+
   .topbar {
     display: grid;
   }
 
   .topbar-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-grid {
     grid-template-columns: 1fr;
   }
 
