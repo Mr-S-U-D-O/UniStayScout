@@ -29,6 +29,23 @@ export async function apiPost<T>(path: string, body: unknown, token?: string): P
   return response.json() as Promise<T>;
 }
 
+export async function apiUpload<T>(path: string, file: File, token?: string): Promise<T> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Upload failed: ${path}`);
+  }
+  return response.json() as Promise<T>;
+}
+
 export async function apiPut<T>(path: string, body: unknown, token?: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'PUT',

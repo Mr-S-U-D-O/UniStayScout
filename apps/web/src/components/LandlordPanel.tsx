@@ -24,6 +24,7 @@ type Props = {
     roomType: 'private' | 'shared';
     amenities: string[];
     photos: string[];
+    files?: File[];
     locationLabel: string;
   }) => Promise<void>;
   landlordListings: Listing[];
@@ -38,6 +39,7 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [photoUrl, setPhotoUrl] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
   const [locationLabel, setLocationLabel] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -58,7 +60,7 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      await createListing({ title, description, price, roomType, amenities: selectedAmenities, photos, locationLabel });
+      await createListing({ title, description, price, roomType, amenities: selectedAmenities, photos, files, locationLabel });
       // reset
       setStep('basics');
       setTitle('');
@@ -67,6 +69,7 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
       setRoomType('private');
       setSelectedAmenities([]);
       setPhotos([]);
+      setFiles([]);
       setLocationLabel('');
     } finally {
       setIsSubmitting(false);
@@ -161,10 +164,18 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
                   ))}
                 </div>
 
-                <p className="muted landlord-photo-label">Add photos (paste URLs):</p>
+                <p className="muted landlord-photo-label">Add photos (upload files or paste URLs):</p>
+                <div className="photo-input-row" style={{marginBottom: '0.5rem'}}>
+                  <input type="file" multiple accept="image/*" onChange={(e) => {
+                    if (e.target.files) {
+                      setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+                    }
+                    e.target.value = '';
+                  }} />
+                </div>
                 <div className="photo-input-row">
                   <input placeholder="https://…" value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} />
-                  <button type="button" onClick={addPhoto}>+ Add</button>
+                  <button type="button" onClick={addPhoto}>+ Add URL</button>
                 </div>
 
                 {/* Drag & Drop zone */}
@@ -175,18 +186,28 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
                   onDrop={(e) => {
                     e.preventDefault();
                     setDragOver(false);
-                    const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
-                    if (url) setPhotos((prev) => [...prev, url]);
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      setFiles((prev) => [...prev, ...Array.from(e.dataTransfer.files)]);
+                    } else {
+                      const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+                      if (url) setPhotos((prev) => [...prev, url]);
+                    }
                   }}
                 >
-                  {photos.length === 0
-                    ? <span className="muted">Drag image URLs here or use the input above</span>
+                  {photos.length === 0 && files.length === 0
+                    ? <span className="muted">Drag image files or URLs here or use the inputs above</span>
                     : (
                       <div className="photo-preview-grid">
                         {photos.map((src, i) => (
-                          <div key={i} className="photo-preview-item">
+                          <div key={`url-${i}`} className="photo-preview-item">
                             <img src={src} alt={`Photo ${i + 1}`} />
                             <button type="button" className="photo-remove" onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}>×</button>
+                          </div>
+                        ))}
+                        {files.map((file, i) => (
+                          <div key={`file-${i}`} className="photo-preview-item">
+                            <img src={URL.createObjectURL(file)} alt={`Upload ${i + 1}`} />
+                            <button type="button" className="photo-remove" onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}>×</button>
                           </div>
                         ))}
                       </div>
@@ -209,7 +230,7 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
                   <div className="review-row"><span>Price</span><strong>R{price}/month</strong></div>
                   <div className="review-row"><span>Room</span><strong>{roomType}</strong></div>
                   <div className="review-row"><span>Amenities</span><strong>{selectedAmenities.join(', ') || 'None'}</strong></div>
-                  <div className="review-row"><span>Photos</span><strong>{photos.length} added</strong></div>
+                  <div className="review-row"><span>Photos</span><strong>{photos.length + files.length} added</strong></div>
                 </div>
                 <div className="wizard-nav">
                   <button type="button" className="outline" onClick={() => setStep('amenities')}>← Edit</button>

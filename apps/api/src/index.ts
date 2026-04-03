@@ -4,6 +4,9 @@ import type { Response } from 'express';
 import crypto from 'crypto';
 import { compare, hash } from 'bcryptjs';
 import { Pool } from 'pg';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -194,15 +197,32 @@ let reviews: Review[] = [];
 let accounts: Account[] = [];
 const profileStore = new Map<string, Record<string, unknown>>();
 
-const bootstrapAdminAccount = {
-  id: 'usr-admin-bootstrap',
-  name: 'Mosa Moleleki',
-  email: 'admin@unistayscout.co.za',
-  phone: '0738349023',
-  password: 'molelekimosa2004$',
-  role: 'admin' as const,
-  isSuperUser: true
+type BootstrapAdminConfig = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
 };
+
+function readBootstrapAdminConfig(): BootstrapAdminConfig | null {
+  const enabled = String(process.env.BOOTSTRAP_ADMIN_ENABLED || '').toLowerCase() === 'true';
+  if (!enabled) {
+    return null;
+  }
+
+  const name = String(process.env.BOOTSTRAP_ADMIN_NAME || '').trim();
+  const email = String(process.env.BOOTSTRAP_ADMIN_EMAIL || '').trim().toLowerCase();
+  const phone = String(process.env.BOOTSTRAP_ADMIN_PHONE || '').trim();
+  const password = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || '');
+  const id = String(process.env.BOOTSTRAP_ADMIN_ID || 'usr-admin-bootstrap').trim();
+
+  if (!name || !email || !phone || !password) {
+    return null;
+  }
+
+  return { id, name, email, phone, password };
+}
 
 const sseClients = new Set<Response>();
 const authRateBuckets = new Map<string, AuthRateBucket>();
@@ -282,6 +302,21 @@ function fromReviewRow(row: ReviewRow): Review {
   };
 }
 
+async function logSecurityAudit(eventType: string, email: string, ip: string, metadata: Record<string, unknown> = {}): Promise<void> {
+  console.log(`[AUDIT] ${eventType} | IP: ${ip} | Email: ${email}`);
+  if (!dbPool) return;
+  try {
+    const id = nextId('audit');
+    await dbPool.query(
+      `INSERT INTO security_audit_logs (id, event_type, account_email, ip_address, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, NOW());`,
+      [id, eventType, email, ip, JSON.stringify(metadata)]
+    );
+  } catch (err) {
+    console.error('Failed to log security audit to db:', err);
+  }
+}
+
 async function initializeAccountStore(): Promise<void> {
   if (!dbPool) {
     accounts = [];
@@ -326,6 +361,22 @@ async function initializeAccountStore(): Promise<void> {
     );
   `);
 
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS security_audit_logs (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      account_email TEXT NOT NULL,
+      ip_address TEXT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await dbPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_security_audit_logs_email
+    ON security_audit_logs (account_email);
+  `);
+
   const rowsResult = await dbPool.query<AccountRow>(`
     SELECT id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at
     FROM accounts
@@ -335,36 +386,43 @@ async function initializeAccountStore(): Promise<void> {
   accounts = rowsResult.rows.map(fromAccountRow);
 
   if (accounts.filter((account) => account.role === 'admin').length === 0) {
-    const bootstrapHash = await hash(bootstrapAdminAccount.password, 10);
-    await dbPool.query(
-      `
-        INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NOW())
-        ON CONFLICT (email)
-        DO UPDATE SET
-          name = EXCLUDED.name,
-          password_hash = EXCLUDED.password_hash,
-          role = EXCLUDED.role,
-          landlord_id = EXCLUDED.landlord_id,
-          is_super_user = TRUE;
-      `,
-      [
-        bootstrapAdminAccount.id,
-        bootstrapAdminAccount.name,
-        bootstrapAdminAccount.email,
-        bootstrapAdminAccount.phone,
-        bootstrapHash,
-        bootstrapAdminAccount.role,
-        null
-      ]
-    );
+    const bootstrapAdminConfig = readBootstrapAdminConfig();
+    if (!bootstrapAdminConfig) {
+      console.warn(
+        'No admin account exists. Set BOOTSTRAP_ADMIN_ENABLED=true and provide BOOTSTRAP_ADMIN_NAME, BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PHONE, BOOTSTRAP_ADMIN_PASSWORD to create the first superuser.'
+      );
+    } else {
+      const bootstrapHash = await hash(bootstrapAdminConfig.password, 10);
+      await dbPool.query(
+        `
+          INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NOW())
+          ON CONFLICT (email)
+          DO UPDATE SET
+            name = EXCLUDED.name,
+            password_hash = EXCLUDED.password_hash,
+            role = EXCLUDED.role,
+            landlord_id = EXCLUDED.landlord_id,
+            is_super_user = TRUE;
+        `,
+        [
+          bootstrapAdminConfig.id,
+          bootstrapAdminConfig.name,
+          bootstrapAdminConfig.email,
+          bootstrapAdminConfig.phone,
+          bootstrapHash,
+          'admin',
+          null
+        ]
+      );
 
-    const refreshed = await dbPool.query<AccountRow>(`
-      SELECT id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at
-      FROM accounts
-      ORDER BY created_at ASC;
-    `);
-    accounts = refreshed.rows.map(fromAccountRow);
+      const refreshed = await dbPool.query<AccountRow>(`
+        SELECT id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at
+        FROM accounts
+        ORDER BY created_at ASC;
+      `);
+      accounts = refreshed.rows.map(fromAccountRow);
+    }
   }
 
   const profileRows = await dbPool.query<ProfileRow>(`
@@ -1157,6 +1215,36 @@ app.get('/health/db', async (_req, res) => {
   }
 });
 
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: uploadsDir,
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${nextId('img')}${ext}`);
+  }
+});
+const upload = multer({ storage });
+
+app.use('/uploads', express.static(uploadsDir));
+
+app.post('/api/media/upload', upload.single('file'), (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) return;
+  if (!requireRole(auth, ['landlord', 'admin'], res)) return;
+  
+  if (!req.file) {
+    res.status(400).json({ message: 'No file uploaded.' });
+    return;
+  }
+  
+  const fileUrl = `/uploads/${req.file.filename}`;
+  res.json({ data: { url: fileUrl } });
+});
+
 app.get('/api/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -1281,6 +1369,18 @@ app.post('/api/auth/register', async (req, res) => {
     return;
   }
 
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    res.status(400).json({ message: 'A valid email format is required.' });
+    return;
+  }
+
+  const cleanPhone = phone.replace(/[^0-9+]/g, '');
+  if (cleanPhone.length < 10) {
+    res.status(400).json({ message: 'A valid phone number is required.' });
+    return;
+  }
+
   if (password.length < 8) {
     res.status(400).json({ message: 'Password must be at least 8 characters.' });
     return;
@@ -1343,6 +1443,12 @@ app.post('/api/auth/login', async (req, res) => {
     return;
   }
 
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    res.status(400).json({ message: 'A valid email format is required.' });
+    return;
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
   let account: Account | undefined;
 
@@ -1354,15 +1460,19 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   if (!account) {
+    await logSecurityAudit('failed_login_no_account', normalizedEmail, req.ip || 'unknown');
     res.status(401).json({ message: 'Invalid credentials.' });
     return;
   }
 
   const passwordMatches = await compare(password, account.passwordHash);
   if (!passwordMatches) {
+    await logSecurityAudit('failed_login_bad_password', normalizedEmail, req.ip || 'unknown');
     res.status(401).json({ message: 'Invalid credentials.' });
     return;
   }
+
+  await logSecurityAudit('successful_login', normalizedEmail, req.ip || 'unknown', { role: account.role });
 
   res.json({
     data: toPublicAccount(account),
@@ -1523,6 +1633,40 @@ app.get('/api/admin/insights', (req, res) => {
       adminSelfRegistrationEnabled: false
     }
   });
+});
+
+app.get('/api/admin/analytics/proximity', async (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) return;
+  if (!requireRole(auth, ['admin'], res)) return;
+
+  if (!dbPool) {
+    res.status(503).json({ message: 'PostGIS not available for analytics.' });
+    return;
+  }
+  
+  try {
+    const result = await dbPool.query(`
+      WITH school_points AS (
+        SELECT 'uj-auckland-park' as id, ST_SetSRID(ST_MakePoint(27.9994, -26.1829), 4326) as geom
+        UNION ALL
+        SELECT 'wits-braamfontein' as id, ST_SetSRID(ST_MakePoint(28.0305, -26.1929), 4326) as geom
+      )
+      SELECT 
+        l.school_id, 
+        COUNT(l.id) as listing_count,
+        ROUND(AVG(ST_DistanceSphere(l.location_geom, s.geom) / 1000.0)::numeric, 2)::float8 as avg_distance_km
+      FROM listings l
+      JOIN school_points s ON l.school_id = s.id
+      WHERE l.status = 'approved' AND l.location_geom IS NOT NULL
+      GROUP BY l.school_id;
+    `);
+    
+    res.json({ data: result.rows });
+  } catch (err) {
+    console.error('Analytics query failed:', err);
+    res.status(500).json({ message: 'Analytics query failed.' });
+  }
 });
 
 app.get('/api/listings', async (req, res) => {

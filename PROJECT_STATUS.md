@@ -12,9 +12,10 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Capture student interest leads for admin follow-up.
 
 ## Current Focus
-- Foundation Sprint: security, data integrity, and operational reliability before launch.
-- Complete auth hardening and persistence migration for core data.
-- Keep the map and dashboard experience stable while the foundation evolves.
+- Production Architecture Sprint: security, real operations flow, and platform reliability.
+- Remove hardcoded secrets and enforce environment-driven bootstrap/provisioning.
+- Complete lead handoff lifecycle so admin can operationally route verified leads to landlords.
+- Replace heuristic AI with model-backed responses while keeping map context grounding.
 
 ## Done
 - Monorepo scaffold created with web, API, shared packages, and docs.
@@ -35,18 +36,19 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Live school directory discovery from OpenStreetMap added.
 - Geocoded landlord property locations added.
 - Live preview and build pipeline validated.
+- Login and register endpoints fortified with regex format validations.
+- Security audit logs table created and hooked to login endpoints for suspicious behavior monitoring.
+- PostGIS proximity analytics endpoint added to admin backend.
+- Admin Panel expanded to include Superuser invitation UI.
+- Listing media upload flow converted from text URLs to actual multipart file uploads with multer.
+- Playwright E2E test added for role flows and map behaviors.
 
 ## In Progress
-- Add login/register validation refinements and suspicious-login audit logs.
-- Keep tightening the UI/UX foundation without changing product behavior.
-- Add PostGIS proximity analytics endpoints and deeper admin SLA/risk insights.
-- Add and document a real data provisioning workflow for Postgres imports.
-- Bootstrap the first superuser admin and allow superuser-only admin invitations.
+- Lock down first-admin bootstrap using environment variables (remove hardcoded credentials).
+- Design and implement admin lead handoff endpoints and delivery workflow.
+- Define model-backed AI service integration for live conversational recommendations.
 
 ## Backlog
-- Add production-grade file upload pipeline for listing media.
-- Harden moderation and anti-abuse controls.
-- Add end-to-end tests for role flows and map behaviors.
 
 ## Decisions
 - Product is map-first, AI-assisted sidebar interaction.
@@ -77,6 +79,11 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Live build validation passed after consolidation work.
 - Real-data provisioning command was added for importing accounts, listings, profiles, interests, and reviews from JSON.
 - First superuser bootstrap was added for Mosa Moleleki, and admin invitations are now restricted to that superuser.
+- Added email/phone validation and database-backed audit logging for logins.
+- Setup multer file-upload endpoint for listing photos instead of relying solely on URLs.
+- Admin Panel UI expanded with Superuser admin invitation capabilities.
+- Added a new PostGIS analytics proximity endpoint.
+- Added Playwright end-to-end test spec for mapping and role auth behaviors.
 
 ## Working Rules
 - Update this file whenever priorities change, work is completed, or major decisions are made.

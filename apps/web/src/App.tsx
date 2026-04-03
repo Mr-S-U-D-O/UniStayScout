@@ -18,7 +18,7 @@ import {
   makeEmptyStudentProfile, makeEmptyLandlordProfile, makeEmptyAdminProfile,
 } from './types';
 import {
-  apiGet, apiPost, API_BASE,
+  apiGet, apiPost, apiUpload, API_BASE,
   AUTH_STORAGE_KEY, AUTH_SESSION_KEY, PROFILE_STORAGE_KEY,
   fetchProfile, saveProfile, deleteAccount,
 } from './api';
@@ -399,7 +399,7 @@ function App() {
 
   async function createListing(data: {
     title: string; description: string; price: number;
-    roomType: 'private' | 'shared'; amenities: string[]; photos: string[];
+    roomType: 'private' | 'shared'; amenities: string[]; photos: string[]; files?: File[];
     locationLabel: string;
   }) {
     if (!authUser || !landlordId || !authToken) {
@@ -410,6 +410,7 @@ function App() {
       setStatusMessage('Add a property address first.');
       return;
     }
+
     let geocodedLocation: { label: string; latitude: number; longitude: number };
     try {
       const response = await apiGet<{ data: { label: string; latitude: number; longitude: number } }>(
@@ -420,10 +421,25 @@ function App() {
       setStatusMessage('Could not geocode that location. Use a more specific address.');
       return;
     }
+
+    const uploadedPhotoUrls: string[] = [...data.photos];
+    if (data.files && data.files.length > 0) {
+      setStatusMessage('Uploading photos...');
+      for (const f of data.files) {
+        try {
+          const res = await apiUpload<{ data: { url: string } }>('/api/media/upload', f, authToken);
+          uploadedPhotoUrls.push(res.data.url);
+        } catch {
+          console.error('Failed to upload', f.name);
+        }
+      }
+    }
+
     await apiPost('/api/listings', {
       landlordName,
       schoolId: selectedSchoolId,
       ...data,
+      photos: uploadedPhotoUrls,
       locationLabel: geocodedLocation.label,
       latitude: geocodedLocation.latitude,
       longitude: geocodedLocation.longitude,
@@ -438,6 +454,17 @@ function App() {
     setStatusMessage(`Listing ${decision}.`);
     await loadAdminData();
     await refreshForRole();
+  }
+
+  async function inviteAdmin(data: { name: string; email: string; phone: string; password: string }) {
+    if (!authToken || !authUser?.isSuperUser) return;
+    try {
+      await apiPost('/api/admin/invite', data, authToken);
+      setStatusMessage(`Admin invitation sent to ${data.email}.`);
+      await loadAdminData();
+    } catch (e) {
+      setStatusMessage(e instanceof Error ? e.message : 'Invitation failed.');
+    }
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -549,10 +576,12 @@ function App() {
 
           {role === 'admin' && (
             <AdminPanel
+              authUser={authUser}
               pendingListings={pendingListings}
               interests={interests}
               adminInsights={adminInsights}
               reviewListing={reviewListing}
+              inviteAdmin={inviteAdmin}
             />
           )}
         </aside>

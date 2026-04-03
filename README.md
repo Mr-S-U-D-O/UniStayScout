@@ -35,6 +35,16 @@ This scaffold is local-first and zero-cost focused for MVP development.
 The API includes a provisioning command for importing real accounts, listings, profiles,
 interests, and reviews from an explicit JSON file. It does not ship with seeded dummy data.
 
+For secure first-admin bootstrap (only when no admin exists), configure these API env vars:
+- `BOOTSTRAP_ADMIN_ENABLED=true`
+- `BOOTSTRAP_ADMIN_NAME=<full name>`
+- `BOOTSTRAP_ADMIN_EMAIL=<admin email>`
+- `BOOTSTRAP_ADMIN_PHONE=<phone number>`
+- `BOOTSTRAP_ADMIN_PASSWORD=<strong password>`
+- Optional: `BOOTSTRAP_ADMIN_ID=<custom id>`
+
+If these are missing and no admin exists, the API will log a warning and skip bootstrap.
+
 ## Project Status
 
 All planning, task tracking, decision history, and update logs now live in [PROJECT_STATUS.md](PROJECT_STATUS.md).

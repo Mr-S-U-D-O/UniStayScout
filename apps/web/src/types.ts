@@ -66,6 +66,7 @@ export type AuthUser = {
   role: AuthRole;
   landlordId?: string;
   profileComplete?: boolean;
+  isSuperUser?: boolean;
 };
 
 export type AuthSession = {

@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Listing, Interest, AdminInsights } from '../types';
+import { Listing, Interest, AdminInsights, AuthUser } from '../types';
 
 type Props = {
+  authUser: AuthUser;
   pendingListings: Listing[];
   interests: Interest[];
   adminInsights: AdminInsights | null;
   reviewListing: (id: string, decision: 'approved' | 'rejected', comment: string) => Promise<void>;
+  inviteAdmin: (data: { name: string; email: string; phone: string; password: string }) => Promise<void>;
 };
 
 const cardVariants = {
@@ -26,7 +28,9 @@ const privileges = [
   'Oversee supply quality and trust signals'
 ];
 
-export function AdminPanel({ pendingListings, interests, adminInsights, reviewListing }: Props) {
+export function AdminPanel({ authUser, pendingListings, interests, adminInsights, reviewListing, inviteAdmin }: Props) {
+  const [inviteForm, setInviteForm] = useState({ name: '', email: '', phone: '', password: '' });
+  const [isInviting, setIsInviting] = useState(false);
   const newestLeads = interests
     .slice()
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -98,6 +102,29 @@ export function AdminPanel({ pendingListings, interests, adminInsights, reviewLi
             ))}
           </ul>
         </div>
+        
+        {authUser?.isSuperUser && (
+          <div className="admin-superuser-panel" style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(59,130,246,0.1)', borderRadius: '8px' }}>
+            <h4 style={{ color: '#3b82f6', marginBottom: '0.5rem' }}>Superuser Actions</h4>
+            <p className="muted" style={{ marginBottom: '1rem' }}>Invite a new admin to the platform.</p>
+            <form 
+              style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setIsInviting(true);
+                await inviteAdmin(inviteForm);
+                setInviteForm({ name: '', email: '', phone: '', password: '' });
+                setIsInviting(false);
+              }}
+            >
+              <input required placeholder="Name" value={inviteForm.name} onChange={(e) => setInviteForm({...inviteForm, name: e.target.value})} />
+              <input required type="email" placeholder="Email" value={inviteForm.email} onChange={(e) => setInviteForm({...inviteForm, email: e.target.value})} />
+              <input required type="tel" placeholder="Phone" value={inviteForm.phone} onChange={(e) => setInviteForm({...inviteForm, phone: e.target.value})} />
+              <input required minLength={8} type="password" placeholder="Temporary Password" value={inviteForm.password} onChange={(e) => setInviteForm({...inviteForm, password: e.target.value})} />
+              <button type="submit" disabled={isInviting}>{isInviting ? 'Sending Invite...' : '+ Invite Admin'}</button>
+            </form>
+          </div>
+        )}
       </div>
 
       <div className="section-card admin-card-queue">
