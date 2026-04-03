@@ -582,7 +582,7 @@ button:disabled {
 
 .admin-dashboard-grid {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 1rem;
 }
 
@@ -591,13 +591,10 @@ button:disabled {
 }
 
 .admin-card-queue,
+.admin-card-governance,
 .admin-card-leads {
-  grid-column: 1 / 2;
-}
-
-.admin-card-governance {
-  grid-column: 2 / 3;
-  grid-row: 2 / 4;
+  grid-column: auto;
+  grid-row: auto;
 }
 
 .left-sidebar, .detail-pane {
@@ -1354,7 +1351,7 @@ button:disabled {
 
 .admin-governance-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.8rem;
 }
 
@@ -2095,4 +2092,3 @@ h3 .section-icon { margin-bottom: 1px; }
   border-color: var(--brand-border);
   box-shadow: var(--shadow-xs);
 }
-
