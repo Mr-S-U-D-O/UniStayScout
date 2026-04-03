@@ -7,12 +7,20 @@ import { LandlordPanel } from './components/LandlordPanel';
 import { AdminPanel } from './components/AdminPanel';
 import { MapWorkspace } from './components/MapWorkspace';
 import { ListingDetail } from './components/ListingDetail';
+import { OnboardingWizard } from './components/OnboardingWizard';
+import { ProfileModal } from './components/ProfileModal';
 import {
   AuthUser, AuthRole, AuthSession,
   School, Listing, Review, Interest,
-  DashboardCard, ChatMessage
+  DashboardCard, ChatMessage,
+  UserProfile, StudentProfile,
+  makeEmptyStudentProfile, makeEmptyLandlordProfile, makeEmptyAdminProfile,
 } from './types';
-import { apiGet, apiPost, API_BASE, AUTH_STORAGE_KEY, AUTH_SESSION_KEY } from './api';
+import {
+  apiGet, apiPost, API_BASE,
+  AUTH_STORAGE_KEY, AUTH_SESSION_KEY, PROFILE_STORAGE_KEY,
+  fetchProfile, saveProfile, deleteAccount,
+} from './api';
 
 type Role = 'student' | 'landlord' | 'admin';
 
@@ -29,10 +37,15 @@ function App() {
     email: '',
     phone: '',
     password: '',
-    role: 'student' as Exclude<AuthRole, 'admin'>
+    role: 'student' as Exclude<AuthRole, 'admin'>,
   });
 
   const role: Role = (authUser?.role || 'student') as Role;
+
+  // ─── Profile ──────────────────────────────────────────────────────────────
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   // ─── Map / Listing state ─────────────────────────────────────────────────
   const [schools, setSchools] = useState<School[]>([]);
@@ -56,21 +69,13 @@ function App() {
   const [landlordListings, setLandlordListings] = useState<Listing[]>([]);
   const [isLoadingListings, setIsLoadingListings] = useState(false);
 
-  // ─── Student profile ─────────────────────────────────────────────────────
-  const [studentName, setStudentName] = useState('');
-  const [studentPhone, setStudentPhone] = useState('');
-  const [studentBudget, setStudentBudget] = useState(4500);
-  const [studentRoomType, setStudentRoomType] = useState<'private' | 'shared' | 'any'>('any');
-
-  // ─── Landlord fields ─────────────────────────────────────────────────────
+  // ─── Landlord name ────────────────────────────────────────────────────────
   const landlordId = authUser?.landlordId || '';
   const [landlordName, setLandlordName] = useState('');
 
   // ─── AI Chat ─────────────────────────────────────────────────────────────
   const [chatInput, setChatInput] = useState('');
-  const [chat, setChat] = useState<ChatMessage[]>([
-    { role: 'assistant', message: 'I can help you shortlist places. Start by selecting your school and I will suggest options on the map.' }
-  ]);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
 
   // ─── Status / Dashboard ──────────────────────────────────────────────────
@@ -86,8 +91,11 @@ function App() {
     () => listings.find((l) => l.id === selectedListingId) || null,
     [listings, selectedListingId]
   );
+  const studentProfile = role === 'student' && userProfile?.role === 'student'
+    ? (userProfile as StudentProfile)
+    : null;
 
-  // ─── Rehydrate session ───────────────────────────────────────────────────
+  // ─── Rehydrate session ────────────────────────────────────────────────────
   useEffect(() => {
     const savedSession = localStorage.getItem(AUTH_SESSION_KEY);
     if (savedSession) {
@@ -95,9 +103,10 @@ function App() {
         const parsed = JSON.parse(savedSession) as AuthSession;
         setAuthUser(parsed.user);
         setAuthToken(parsed.token || '');
-        setStudentName(parsed.user.name || '');
-        setStudentPhone(parsed.user.phone || '');
         setLandlordName(parsed.user.name || '');
+        // Rehydrate profile from local storage while we wait for API
+        const cachedProfile = localStorage.getItem(PROFILE_STORAGE_KEY);
+        if (cachedProfile) setUserProfile(JSON.parse(cachedProfile) as UserProfile);
         return;
       } catch {
         localStorage.removeItem(AUTH_SESSION_KEY);
@@ -108,26 +117,69 @@ function App() {
     try {
       const parsed = JSON.parse(saved) as AuthUser;
       setAuthUser(parsed);
-      setStudentName(parsed.name || '');
-      setStudentPhone(parsed.phone || '');
       setLandlordName(parsed.name || '');
     } catch {
       localStorage.removeItem(AUTH_STORAGE_KEY);
     }
   }, []);
 
-  // ─── Load demo accounts ──────────────────────────────────────────────────
+  // ─── Load demo accounts ───────────────────────────────────────────────────
   useEffect(() => {
     apiGet<{ data: Array<{ role: string; email: string; password: string }> }>('/api/auth/demo-accounts')
       .then((r) => setDemoAccounts(r.data))
       .catch(() => setDemoAccounts([]));
   }, []);
 
-  // ─── API helpers ─────────────────────────────────────────────────────────
+  // ─── Load & sync profile ──────────────────────────────────────────────────
+  async function loadUserProfile(token: string, user: AuthUser) {
+    const profile = await fetchProfile(token);
+    if (profile) {
+      setUserProfile(profile);
+      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+      setShowOnboarding(false);
+    } else {
+      // No profile found — show onboarding
+      if (!user.profileComplete) {
+        setShowOnboarding(true);
+      }
+    }
+  }
+
+  async function handleSaveProfile(updated: UserProfile) {
+    if (!authToken) return;
+    const saved = await saveProfile(updated, authToken);
+    if (saved) {
+      setUserProfile(saved);
+      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(saved));
+      // Sync budget/room to map filters for students
+      if (saved.role === 'student') {
+        const s = saved as StudentProfile;
+        setMinPrice(s.budgetMin);
+        setMaxPrice(s.budgetMax);
+        if (s.roomType !== 'any') setListingRoomTypeFilter(s.roomType);
+        setSelectedAmenities(s.preferredAmenities);
+      }
+    }
+  }
+
+  async function handleDeleteAccount(password: string) {
+    await deleteAccount(password, authToken);
+    logout();
+  }
+
+  function handleOnboardingComplete(profile: UserProfile) {
+    setShowOnboarding(false);
+    handleSaveProfile(profile).catch(() => {});
+    setStatusMessage('Profile saved! The AI is now personalised for you.');
+  }
+
+  // ─── API helpers ──────────────────────────────────────────────────────────
   async function loadDashboardSummary() {
     if (!authUser?.id || !authToken) { setDashboardCards([]); return; }
-    const r = await apiGet<{ data: { cards: DashboardCard[] } }>('/api/dashboard-summary', authToken);
-    setDashboardCards(r.data.cards || []);
+    try {
+      const r = await apiGet<{ data: { cards: DashboardCard[] } }>('/api/dashboard-summary', authToken);
+      setDashboardCards(r.data.cards || []);
+    } catch { setDashboardCards([]); }
   }
 
   async function loadSchools(query = '') {
@@ -136,15 +188,11 @@ function App() {
       const params = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
       const response = await apiGet<{ data: School[] }>(`/api/schools${params}`);
       setSchools(response.data || []);
-
       if (response.data.length > 0) {
-        const stillVisible = response.data.some((school) => school.id === selectedSchoolId);
+        const stillVisible = response.data.some((s) => s.id === selectedSchoolId);
         setSelectedSchoolId(stillVisible ? selectedSchoolId : response.data[0].id);
-      } else {
-        setSelectedSchoolId('');
       }
-
-      setStatusMessage(query.trim() ? `Loaded ${response.data.length} school matches.` : 'Live school directory loaded.');
+      setStatusMessage(query.trim() ? `${response.data.length} school matches.` : 'Live school directory loaded.');
     } catch (e) {
       setStatusMessage(e instanceof Error ? e.message : 'Unable to load schools.');
     } finally {
@@ -156,15 +204,15 @@ function App() {
     setAuthLoading(true); setAuthError('');
     try {
       const r = await apiPost<{ data: AuthUser; token: string }>('/api/auth/login', {
-        email: authForm.email, password: authForm.password
+        email: authForm.email, password: authForm.password,
       });
       setAuthUser(r.data); setAuthToken(r.token || '');
-      setStudentName(r.data.name || ''); setStudentPhone(r.data.phone || '');
       setLandlordName(r.data.name || '');
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(r.data));
       localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ user: r.data, token: r.token }));
       setStatusMessage(`Welcome back, ${r.data.name}.`);
       setAuthForm((c) => ({ ...c, password: '' }));
+      await loadUserProfile(r.token || '', r.data);
     } catch (e) {
       setAuthError(e instanceof Error ? e.message : 'Login failed.');
     } finally { setAuthLoading(false); }
@@ -175,15 +223,16 @@ function App() {
     try {
       const r = await apiPost<{ data: AuthUser; token: string }>('/api/auth/register', {
         name: authForm.name, email: authForm.email, phone: authForm.phone,
-        password: authForm.password, role: authForm.role
+        password: authForm.password, role: authForm.role,
       });
       setAuthUser(r.data); setAuthToken(r.token || '');
-      setStudentName(r.data.name || ''); setStudentPhone(r.data.phone || '');
       setLandlordName(r.data.name || '');
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(r.data));
       localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ user: r.data, token: r.token }));
-      setStatusMessage(`Account created for ${r.data.role}.`);
+      setStatusMessage(`Account created! Let's set up your profile.`);
       setAuthForm((c) => ({ ...c, password: '' }));
+      // Always show onboarding for new registrations
+      setShowOnboarding(true);
     } catch (e) {
       setAuthError(e instanceof Error ? e.message : 'Registration failed.');
     } finally { setAuthLoading(false); }
@@ -191,10 +240,12 @@ function App() {
 
   function logout() {
     setAuthUser(null); setAuthToken('');
+    setUserProfile(null); setShowOnboarding(false); setProfileModalOpen(false);
     setDashboardCards([]); setListings([]); setSelectedListingId('');
     setAuthForm((c) => ({ ...c, password: '' }));
     localStorage.removeItem(AUTH_STORAGE_KEY);
     localStorage.removeItem(AUTH_SESSION_KEY);
+    localStorage.removeItem(PROFILE_STORAGE_KEY);
   }
 
   async function loadListings() {
@@ -205,7 +256,7 @@ function App() {
         schoolId: selectedSchoolId, radiusKm: String(radiusKm),
         minPrice: String(minPrice), maxPrice: String(maxPrice),
         roomType: listingRoomTypeFilter, verifiedOnly: String(verifiedOnly),
-        sortBy, amenities: selectedAmenities.join(',')
+        sortBy, amenities: selectedAmenities.join(','),
       });
       const r = await apiGet<{ data: Listing[] }>(`/api/listings?${params}`, authToken);
       setListings(r.data);
@@ -220,7 +271,7 @@ function App() {
   async function loadAdminData() {
     const [pending, leadData] = await Promise.all([
       apiGet<{ data: Listing[] }>('/api/admin/pending-listings', authToken),
-      apiGet<{ data: Interest[] }>('/api/admin/interests', authToken)
+      apiGet<{ data: Interest[] }>('/api/admin/interests', authToken),
     ]);
     setPendingListings(pending.data);
     setInterests(leadData.data);
@@ -266,10 +317,10 @@ function App() {
     if (!authUser || !authToken) return;
     const source = new EventSource(`${API_BASE}/api/events`);
     source.addEventListener('connected', () => setStatusMessage('Live updates connected.'));
-    source.addEventListener('listing-created', () => refreshForRole().catch(() => setStatusMessage('Live refresh failed.')));
-    source.addEventListener('listing-reviewed', () => refreshForRole().catch(() => setStatusMessage('Live refresh failed.')));
+    source.addEventListener('listing-created', () => refreshForRole().catch(() => {}));
+    source.addEventListener('listing-reviewed', () => refreshForRole().catch(() => {}));
     source.addEventListener('interest-created', () => {
-      if (role === 'admin') loadAdminData().catch(() => setStatusMessage('Admin leads refresh failed.'));
+      if (role === 'admin') loadAdminData().catch(() => {});
     });
     source.addEventListener('review-created', () => {
       if (selectedListingId) loadReviews(selectedListingId).catch(() => setReviews([]));
@@ -278,26 +329,47 @@ function App() {
     return () => source.close();
   }, [authUser, authToken, role, selectedListingId, selectedSchoolId, radiusKm]);
 
+  // Sync student profile filters whenever profile changes
+  useEffect(() => {
+    if (role === 'student' && userProfile?.role === 'student') {
+      const s = userProfile as StudentProfile;
+      if (s.budgetMax > 0) setMaxPrice(s.budgetMax);
+      if (s.budgetMin > 0) setMinPrice(s.budgetMin);
+      if (s.roomType !== 'any') setListingRoomTypeFilter(s.roomType);
+      if (s.preferredAmenities.length > 0) setSelectedAmenities(s.preferredAmenities);
+    }
+  }, [userProfile, role]);
+
   // ─── Actions ─────────────────────────────────────────────────────────────
   async function askAssistant(message: string) {
     const nextChat = [...chat, { role: 'user' as const, message }];
     setChat(nextChat);
-    const r = await apiPost<{ questions: string[]; recommendedListingIds: string[]; rationale: string }>(
-      '/api/ai/recommendations',
-      { profile: { name: studentName, budget: studentBudget, roomType: studentRoomType }, mapContext: { schoolId: selectedSchoolId, radiusKm }, conversation: nextChat },
-      authToken
-    );
-    setRecommendedIds(r.recommendedListingIds);
-    setAiQuestions(r.questions);
-    setChat((c) => [...c, { role: 'assistant', message: r.rationale }]);
-    if (r.recommendedListingIds.length > 0) setSelectedListingId(r.recommendedListingIds[0]);
+    try {
+      const r = await apiPost<{ questions: string[]; recommendedListingIds: string[]; rationale: string }>(
+        '/api/ai/recommendations',
+        {
+          profile: userProfile ?? { name: authUser?.name, budget: maxPrice, roomType: listingRoomTypeFilter },
+          mapContext: { schoolId: selectedSchoolId, radiusKm, availableListings: listings.slice(0, 20).map((l) => ({ id: l.id, title: l.title, price: l.price, distanceKm: l.distanceKm, amenities: l.amenities, roomType: l.roomType, isVerified: l.isVerified })) },
+          conversation: nextChat,
+        },
+        authToken
+      );
+      setRecommendedIds(r.recommendedListingIds);
+      setAiQuestions(r.questions);
+      setChat((c) => [...c, { role: 'assistant', message: r.rationale }]);
+      if (r.recommendedListingIds.length > 0) setSelectedListingId(r.recommendedListingIds[0]);
+    } catch {
+      setChat((c) => [...c, { role: 'assistant', message: 'Sorry, I could not reach the AI service. Please try again.' }]);
+    }
   }
 
   async function submitInterest() {
     if (!selectedListing || !authUser || !authToken) return;
     await apiPost('/api/interests', {
-      listingId: selectedListing.id, studentName, studentPhone,
-      studentNote: `Interested in ${selectedListing.title}`
+      listingId: selectedListing.id,
+      studentName: authUser.name,
+      studentPhone: authUser.phone,
+      studentNote: `Interested in ${selectedListing.title}`,
     }, authToken);
     setStatusMessage('Interest submitted. Admin can now follow up with the landlord.');
   }
@@ -305,9 +377,9 @@ function App() {
   async function submitReview(formData: FormData) {
     if (!selectedListing) return;
     await apiPost(`/api/listings/${selectedListing.id}/reviews`, {
-      author: String(formData.get('author') || 'Anonymous'),
+      author: String(formData.get('author') || authUser?.name || 'Anonymous'),
       rating: Number(formData.get('rating') || 5),
-      comment: String(formData.get('comment') || '')
+      comment: String(formData.get('comment') || ''),
     }, authToken);
     setStatusMessage('Review added.');
     await loadReviews(selectedListing.id);
@@ -322,12 +394,10 @@ function App() {
       setStatusMessage('Please login as a landlord to submit listings.');
       return;
     }
-
     if (!data.locationLabel.trim()) {
-      setStatusMessage('Add a real property address or place name first.');
+      setStatusMessage('Add a property address first.');
       return;
     }
-
     let geocodedLocation: { label: string; latitude: number; longitude: number };
     try {
       const response = await apiGet<{ data: { label: string; latitude: number; longitude: number } }>(
@@ -335,17 +405,16 @@ function App() {
       );
       geocodedLocation = response.data;
     } catch {
-      setStatusMessage('Could not geocode that location. Use a more specific address or place name.');
+      setStatusMessage('Could not geocode that location. Use a more specific address.');
       return;
     }
-
     await apiPost('/api/listings', {
       landlordName,
       schoolId: selectedSchoolId,
       ...data,
       locationLabel: geocodedLocation.label,
       latitude: geocodedLocation.latitude,
-      longitude: geocodedLocation.longitude
+      longitude: geocodedLocation.longitude,
     }, authToken);
     setStatusMessage('Listing submitted for admin review.');
     await loadLandlordData();
@@ -359,7 +428,7 @@ function App() {
     await refreshForRole();
   }
 
-  // ─── Render ──────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────
   if (!authUser) {
     return (
       <AuthLayout
@@ -378,8 +447,46 @@ function App() {
 
   return (
     <main className="app-shell">
+      {/* Onboarding modal */}
+      <AnimatePresence>
+        {showOnboarding && (
+          <OnboardingWizard
+            authUser={authUser}
+            onComplete={handleOnboardingComplete}
+            onSkip={() => setShowOnboarding(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Profile drawer */}
+      <AnimatePresence>
+        {profileModalOpen && userProfile && (
+          <ProfileModal
+            authUser={authUser}
+            profile={userProfile}
+            onSave={handleSaveProfile}
+            onDeleteAccount={handleDeleteAccount}
+            onClose={() => setProfileModalOpen(false)}
+          />
+        )}
+        {profileModalOpen && !userProfile && (
+          <ProfileModal
+            authUser={authUser}
+            profile={
+              role === 'student' ? makeEmptyStudentProfile()
+              : role === 'landlord' ? makeEmptyLandlordProfile()
+              : makeEmptyAdminProfile()
+            }
+            onSave={handleSaveProfile}
+            onDeleteAccount={handleDeleteAccount}
+            onClose={() => setProfileModalOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       <TopBar
         authUser={authUser}
+        userProfile={userProfile}
         schools={schools}
         selectedSchoolId={selectedSchoolId}
         setSelectedSchoolId={setSelectedSchoolId}
@@ -395,6 +502,7 @@ function App() {
         setMapTheme={setMapTheme}
         dashboardCards={dashboardCards}
         statusMessage={statusMessage}
+        onOpenProfile={() => setProfileModalOpen(true)}
         logout={logout}
       />
 
@@ -402,10 +510,7 @@ function App() {
         <aside className="left-sidebar">
           {role === 'student' && (
             <AIAssistant
-              studentName={studentName} setStudentName={setStudentName}
-              studentPhone={studentPhone} setStudentPhone={setStudentPhone}
-              studentBudget={studentBudget} setStudentBudget={setStudentBudget}
-              studentRoomType={studentRoomType} setStudentRoomType={setStudentRoomType}
+              studentProfile={studentProfile}
               minPrice={minPrice} setMinPrice={setMinPrice}
               maxPrice={maxPrice} setMaxPrice={setMaxPrice}
               listingRoomTypeFilter={listingRoomTypeFilter} setListingRoomTypeFilter={setListingRoomTypeFilter}
@@ -416,6 +521,7 @@ function App() {
               aiQuestions={aiQuestions}
               listings={listings}
               isLoading={isLoadingListings}
+              onOpenProfile={() => setProfileModalOpen(true)}
             />
           )}
 
@@ -477,7 +583,7 @@ function App() {
                   school={selectedSchool}
                   reviews={reviews}
                   role={role}
-                  studentName={studentName}
+                  studentName={authUser.name}
                   submitInterest={submitInterest}
                   submitReview={submitReview}
                   setStatusMessage={setStatusMessage}
