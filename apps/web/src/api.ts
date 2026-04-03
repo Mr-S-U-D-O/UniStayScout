@@ -1,6 +1,6 @@
 // Shared API helpers
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://unistayscout-api.molelekishoez.workers.dev';
 export const AUTH_STORAGE_KEY = 'unistayscout-auth-user';
 export const AUTH_SESSION_KEY = 'unistayscout-auth-session';
 export const PROFILE_STORAGE_KEY = 'unistayscout-profile';

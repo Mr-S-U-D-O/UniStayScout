@@ -104,18 +104,18 @@ async function getAccountFromToken(c: any) {
   const authHeader = c.req.header('Authorization');
   if (!authHeader?.startsWith('Bearer ')) return null;
   const token = authHeader.substring(7);
-  
+
   try {
     // JWT Parsing (Base64 only for this prototype, use real verification in prod)
     const [header, payloadB64, sig] = token.split('.');
     const payload = JSON.parse(atob(payloadB64)) as { userId: string; exp: number };
-    
+
     if (payload.exp < Date.now() / 1000) return null;
 
     const db = new Pool({ connectionString: c.env.DATABASE_URL });
     const result = await db.query('SELECT * FROM accounts WHERE id = $1', [payload.userId]);
     await db.end();
-    
+
     if (result.rows.length === 0) return null;
     const row = result.rows[0];
     return {
@@ -152,7 +152,7 @@ app.get('/', (c) => c.text('UniStayScout Edge API (Hono)'));
 app.post('/api/auth/register', async (c) => {
   const body = await c.req.json();
   const { name, email, phone, password, role } = body;
-  
+
   if (!name || !email || !password || !role) {
     return c.json({ message: 'Missing required fields' }, 400);
   }
@@ -162,14 +162,14 @@ app.post('/api/auth/register', async (c) => {
     const passwordHash = await hash(password, 10);
     const id = nextId('usr');
     const landlordId = role === 'landlord' ? nextId('landlord') : null;
-    
+
     const result = await db.query(
       `INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        RETURNING *`,
       [id, name, email.toLowerCase().trim(), phone, passwordHash, role, landlordId]
     );
-    
+
     const account = result.rows[0];
     return c.json({
       data: {
@@ -193,15 +193,15 @@ app.post('/api/auth/register', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json();
   const db = new Pool({ connectionString: c.env.DATABASE_URL });
-  
+
   try {
     const result = await db.query('SELECT * FROM accounts WHERE email = $1', [email.toLowerCase().trim()]);
     if (result.rows.length === 0) return c.json({ message: 'Invalid credentials' }, 401);
-    
+
     const account = result.rows[0];
     const match = await compare(password, account.password_hash);
     if (!match) return c.json({ message: 'Invalid credentials' }, 401);
-    
+
     return c.json({
       data: {
         id: account.id,
@@ -266,13 +266,13 @@ app.post('/api/media/upload', async (c) => {
 
   const formData = await c.req.parseBody();
   const file = formData['file'] as File;
-  
+
   if (!file) return c.json({ message: 'No file provided' }, 400);
 
   // Cloudinary Signed Upload
   const timestamp = Math.round(Date.now() / 1000);
   const signatureStr = `timestamp=${timestamp}${c.env.CLOUDINARY_API_SECRET}`;
-  
+
   // Use SubtleCrypto to hash the signature for production
   const encoder = new TextEncoder();
   const data = encoder.encode(signatureStr);
@@ -290,7 +290,7 @@ app.post('/api/media/upload', async (c) => {
       method: 'POST',
       body: cloudinaryForm
     });
-    
+
     const result = await res.json() as any;
     if (result.secure_url) {
       return c.json({ data: { url: result.secure_url } });
@@ -322,7 +322,7 @@ app.post('/api/admin/listings/:id/review', async (c) => {
 
   const id = c.req.param('id');
   const { decision, comment } = await c.req.json();
-  
+
   const db = new Pool({ connectionString: c.env.DATABASE_URL });
   try {
     await db.query(
@@ -373,16 +373,16 @@ app.post('/api/admin/leads/:id/handoff', async (c) => {
 
   const id = c.req.param('id');
   const { handoffChannel, handoffNote } = await c.req.json();
-  
+
   const db = new Pool({ connectionString: c.env.DATABASE_URL });
   try {
     await db.query(
-      `UPDATE interests 
-       SET handoff_status = 'landlord-notified', 
-           handed_off_at = NOW(), 
-           handoff_channel = $1, 
-           handoff_note = $2, 
-           handed_off_by_admin_id = $3 
+      `UPDATE interests
+       SET handoff_status = 'landlord-notified',
+           handed_off_at = NOW(),
+           handoff_channel = $1,
+           handoff_note = $2,
+           handed_off_by_admin_id = $3
        WHERE id = $4`,
       [handoffChannel, handoffNote, user.id, id]
     );
