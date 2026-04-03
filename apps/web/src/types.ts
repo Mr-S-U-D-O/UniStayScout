@@ -65,6 +65,7 @@ export type AuthUser = {
   phone: string;
   role: AuthRole;
   landlordId?: string;
+  profileComplete?: boolean;
 };
 
 export type AuthSession = {
@@ -78,3 +79,88 @@ export type DashboardCard = {
 };
 
 export type WizardStep = 'basics' | 'pricing' | 'amenities' | 'review';
+
+// ─── Rich Profile Types ────────────────────────────────────────────────────
+
+export type LifestyleTag = 'quiet' | 'social' | 'night-owl' | 'early-riser' | 'pet-friendly' | 'study-focused';
+export type TransportMode = 'walking' | 'public-transport' | 'own-car';
+export type SecurityPriority = 'low' | 'medium' | 'high';
+export type VerificationStatus = 'unverified' | 'pending' | 'verified';
+
+export type StudentProfile = {
+  role: 'student';
+  avatarUrl: string;
+  bio: string;
+  university: string;
+  yearOfStudy: number;         // 1–6
+  moveInDate: string;          // ISO date string YYYY-MM-DD
+  budgetMin: number;
+  budgetMax: number;
+  roomType: 'private' | 'shared' | 'any';
+  lifestyle: LifestyleTag[];
+  transportMode: TransportMode;
+  securityPriority: SecurityPriority;
+  preferredAmenities: string[];
+  specialNeeds: string;        // free text — accessibility, dietary, etc.
+};
+
+export type LandlordProfile = {
+  role: 'landlord';
+  avatarUrl: string;
+  bio: string;
+  businessName: string;
+  whatsapp: string;
+  responseTime: string;        // e.g. "within 1 hour"
+  propertiesManaged: number;
+  verificationStatus: VerificationStatus;
+};
+
+export type AdminProfile = {
+  role: 'admin';
+  avatarUrl: string;
+  bio: string;
+  department: string;
+};
+
+export type UserProfile = StudentProfile | LandlordProfile | AdminProfile;
+
+export function makeEmptyStudentProfile(): StudentProfile {
+  return {
+    role: 'student',
+    avatarUrl: '',
+    bio: '',
+    university: '',
+    yearOfStudy: 1,
+    moveInDate: '',
+    budgetMin: 2000,
+    budgetMax: 5000,
+    roomType: 'any',
+    lifestyle: [],
+    transportMode: 'walking',
+    securityPriority: 'medium',
+    preferredAmenities: [],
+    specialNeeds: '',
+  };
+}
+
+export function makeEmptyLandlordProfile(): LandlordProfile {
+  return {
+    role: 'landlord',
+    avatarUrl: '',
+    bio: '',
+    businessName: '',
+    whatsapp: '',
+    responseTime: 'within 24 hours',
+    propertiesManaged: 1,
+    verificationStatus: 'unverified',
+  };
+}
+
+export function makeEmptyAdminProfile(): AdminProfile {
+  return {
+    role: 'admin',
+    avatarUrl: '',
+    bio: '',
+    department: '',
+  };
+}

@@ -25,19 +25,19 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Auth middleware, signed tokens, bcrypt hashing, and auth throttling implemented.
 - PostgreSQL-backed account store bootstrap with in-memory fallback implemented.
 - Local PostGIS docker foundation and DB init SQL added.
+- PostgreSQL-backed listings, interests, and reviews persistence implemented with in-memory fallback.
+- PostGIS geometry column/indexes and SQL radius filtering for listings implemented.
 - Advanced map filtering, sorting, verified-only, and amenity filtering implemented.
 - Live school directory discovery from OpenStreetMap added.
 - Geocoded landlord property locations added.
 - Live preview and build pipeline validated.
 
 ## In Progress
-- Begin persistence migration for listings, interests, and reviews.
 - Add login/register validation refinements and suspicious-login audit logs.
 - Keep tightening the UI/UX foundation without changing product behavior.
-- Expand real-location ingestion and persistence for listings.
+- Add PostGIS proximity ordering and analytics endpoints.
 
 ## Backlog
-- Persist listings/interests/reviews in PostgreSQL + PostGIS.
 - Add production-grade file upload pipeline for listing media.
 - Harden moderation and anti-abuse controls.
 - Add end-to-end tests for role flows and map behaviors.
@@ -62,6 +62,8 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Foundation security hardening was implemented for auth.
 - PostgreSQL account-store foundation was added.
 - Live school discovery and listing geocoding were wired to OpenStreetMap/Nominatim.
+- PostgreSQL persistence was added for listings, interests, and reviews.
+- PostGIS SQL filtering for listing proximity was added with in-memory fallback.
 - Live build validation passed after consolidation work.
 
 ## Working Rules

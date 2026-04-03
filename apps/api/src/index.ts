@@ -110,6 +110,53 @@ type AccountRow = {
   created_at: string;
 };
 
+type ListingRow = {
+  id: string;
+  landlord_id: string;
+  landlord_name: string;
+  title: string;
+  description: string;
+  school_id: string;
+  location_label: string;
+  latitude: number;
+  longitude: number;
+  price: number;
+  currency: string;
+  room_type: 'private' | 'shared';
+  amenities: string[];
+  photos: string[];
+  is_verified: boolean;
+  available_beds: number;
+  status: ListingStatus;
+  admin_comment: string;
+  created_at: string;
+  updated_at: string;
+  views: number;
+};
+
+type ListingDistanceRow = ListingRow & {
+  distance_km: number;
+};
+
+type InterestRow = {
+  id: string;
+  listing_id: string;
+  student_user_id: string | null;
+  student_name: string;
+  student_phone: string;
+  student_note: string;
+  created_at: string;
+};
+
+type ReviewRow = {
+  id: string;
+  listing_id: string;
+  author: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+};
+
 const seedSchools: School[] = [
   {
     id: 'uj-auckland-park',
@@ -131,7 +178,7 @@ const seedSchools: School[] = [
 
 let schools: School[] = [...seedSchools];
 
-const listings: Listing[] = [
+const seedListings: Listing[] = [
   {
     id: 'lst-1',
     landlordId: 'landlord-1',
@@ -272,8 +319,9 @@ const listings: Listing[] = [
   }
 ];
 
-const interests: Interest[] = [];
-const reviews: Review[] = [];
+let listings: Listing[] = [...seedListings];
+let interests: Interest[] = [];
+let reviews: Review[] = [];
 
 const seedAccounts: Account[] = [
   {
@@ -325,6 +373,62 @@ function fromAccountRow(row: AccountRow): Account {
     passwordHash: row.password_hash,
     role: row.role,
     landlordId: row.landlord_id || undefined,
+    createdAt: row.created_at
+  };
+}
+
+function fromListingRow(row: ListingRow): Listing {
+  return {
+    id: row.id,
+    landlordId: row.landlord_id,
+    landlordName: row.landlord_name,
+    title: row.title,
+    description: row.description,
+    schoolId: row.school_id,
+    locationLabel: row.location_label,
+    latitude: Number(row.latitude),
+    longitude: Number(row.longitude),
+    price: Number(row.price),
+    currency: row.currency,
+    roomType: row.room_type,
+    amenities: row.amenities || [],
+    photos: row.photos || [],
+    isVerified: Boolean(row.is_verified),
+    availableBeds: Number(row.available_beds),
+    status: row.status,
+    adminComment: row.admin_comment || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    views: Number(row.views)
+  };
+}
+
+function fromListingDistanceRow(row: ListingDistanceRow): Listing & { distanceKm: number } {
+  return {
+    ...fromListingRow(row),
+    distanceKm: Number(row.distance_km)
+  };
+}
+
+function fromInterestRow(row: InterestRow): Interest {
+  return {
+    id: row.id,
+    listingId: row.listing_id,
+    studentUserId: row.student_user_id || undefined,
+    studentName: row.student_name,
+    studentPhone: row.student_phone,
+    studentNote: row.student_note,
+    createdAt: row.created_at
+  };
+}
+
+function fromReviewRow(row: ReviewRow): Review {
+  return {
+    id: row.id,
+    listingId: row.listing_id,
+    author: row.author,
+    rating: Number(row.rating),
+    comment: row.comment,
     createdAt: row.created_at
   };
 }
@@ -401,6 +505,359 @@ async function persistAccount(account: Account): Promise<void> {
       account.createdAt
     ]
   );
+}
+
+async function initializeMarketplaceStore(): Promise<void> {
+  if (!dbPool) {
+    return;
+  }
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS listings (
+      id TEXT PRIMARY KEY,
+      landlord_id TEXT NOT NULL,
+      landlord_name TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      school_id TEXT NOT NULL,
+      location_label TEXT NOT NULL,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
+      location_geom geometry(Point, 4326),
+      price NUMERIC(12, 2) NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'ZAR',
+      room_type TEXT NOT NULL CHECK (room_type IN ('private', 'shared')),
+      amenities JSONB NOT NULL DEFAULT '[]'::jsonb,
+      photos JSONB NOT NULL DEFAULT '[]'::jsonb,
+      is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+      available_beds INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
+      admin_comment TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      views INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
+  await dbPool.query(`
+    ALTER TABLE listings
+    ADD COLUMN IF NOT EXISTS location_geom geometry(Point, 4326);
+  `);
+
+  await dbPool.query(`
+    UPDATE listings
+    SET location_geom = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+    WHERE location_geom IS NULL;
+  `);
+
+  await dbPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_listings_location_geom
+    ON listings USING GIST (location_geom);
+  `);
+
+  await dbPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_listings_school_status
+    ON listings (school_id, status);
+  `);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS interests (
+      id TEXT PRIMARY KEY,
+      listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+      student_user_id TEXT,
+      student_name TEXT NOT NULL,
+      student_phone TEXT NOT NULL,
+      student_note TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS reviews (
+      id TEXT PRIMARY KEY,
+      listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+      author TEXT NOT NULL,
+      rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+      comment TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+
+  const listingCountResult = await dbPool.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM listings;');
+  const listingCount = Number(listingCountResult.rows[0]?.count || '0');
+
+  if (listingCount === 0) {
+    for (const listing of seedListings) {
+      await dbPool.query(
+        `
+          INSERT INTO listings (
+            id, landlord_id, landlord_name, title, description, school_id, location_label,
+            latitude, longitude, location_geom, price, currency, room_type, amenities, photos,
+            is_verified, available_beds, status, admin_comment, created_at, updated_at, views
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, $6, $7,
+            $8, $9, ST_SetSRID(ST_MakePoint($9, $8), 4326), $10, $11, $12, $13::jsonb, $14::jsonb,
+            $15, $16, $17, $18, $19, $20, $21
+          );
+        `,
+        [
+          listing.id,
+          listing.landlordId,
+          listing.landlordName,
+          listing.title,
+          listing.description,
+          listing.schoolId,
+          listing.locationLabel,
+          listing.latitude,
+          listing.longitude,
+          listing.price,
+          listing.currency,
+          listing.roomType,
+          JSON.stringify(listing.amenities),
+          JSON.stringify(listing.photos),
+          listing.isVerified,
+          listing.availableBeds,
+          listing.status,
+          listing.adminComment,
+          listing.createdAt,
+          listing.updatedAt,
+          listing.views
+        ]
+      );
+    }
+  }
+
+  const listingRows = await dbPool.query<ListingRow>(`
+    SELECT
+      id, landlord_id, landlord_name, title, description, school_id, location_label,
+      latitude, longitude, price, currency, room_type,
+      amenities::jsonb AS amenities,
+      photos::jsonb AS photos,
+      is_verified, available_beds, status, admin_comment, created_at, updated_at, views
+    FROM listings
+    ORDER BY created_at ASC;
+  `);
+
+  listings = listingRows.rows.map(fromListingRow);
+
+  const interestRows = await dbPool.query<InterestRow>(`
+    SELECT id, listing_id, student_user_id, student_name, student_phone, student_note, created_at
+    FROM interests
+    ORDER BY created_at DESC;
+  `);
+  interests = interestRows.rows.map(fromInterestRow);
+
+  const reviewRows = await dbPool.query<ReviewRow>(`
+    SELECT id, listing_id, author, rating, comment, created_at
+    FROM reviews
+    ORDER BY created_at DESC;
+  `);
+  reviews = reviewRows.rows.map(fromReviewRow);
+}
+
+async function persistListing(listing: Listing): Promise<void> {
+  if (!dbPool) {
+    return;
+  }
+
+  await dbPool.query(
+    `
+      INSERT INTO listings (
+        id, landlord_id, landlord_name, title, description, school_id, location_label,
+        latitude, longitude, location_geom, price, currency, room_type, amenities, photos,
+        is_verified, available_beds, status, admin_comment, created_at, updated_at, views
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8, $9, ST_SetSRID(ST_MakePoint($9, $8), 4326), $10, $11, $12, $13::jsonb, $14::jsonb,
+        $15, $16, $17, $18, $19, $20, $21
+      );
+    `,
+    [
+      listing.id,
+      listing.landlordId,
+      listing.landlordName,
+      listing.title,
+      listing.description,
+      listing.schoolId,
+      listing.locationLabel,
+      listing.latitude,
+      listing.longitude,
+      listing.price,
+      listing.currency,
+      listing.roomType,
+      JSON.stringify(listing.amenities),
+      JSON.stringify(listing.photos),
+      listing.isVerified,
+      listing.availableBeds,
+      listing.status,
+      listing.adminComment,
+      listing.createdAt,
+      listing.updatedAt,
+      listing.views
+    ]
+  );
+}
+
+async function persistListingModeration(listing: Listing): Promise<void> {
+  if (!dbPool) {
+    return;
+  }
+
+  await dbPool.query(
+    `
+      UPDATE listings
+      SET status = $2, admin_comment = $3, updated_at = $4
+      WHERE id = $1;
+    `,
+    [listing.id, listing.status, listing.adminComment, listing.updatedAt]
+  );
+}
+
+async function persistInterest(interest: Interest): Promise<void> {
+  if (!dbPool) {
+    return;
+  }
+
+  await dbPool.query(
+    `
+      INSERT INTO interests (id, listing_id, student_user_id, student_name, student_phone, student_note, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7);
+    `,
+    [
+      interest.id,
+      interest.listingId,
+      interest.studentUserId || null,
+      interest.studentName,
+      interest.studentPhone,
+      interest.studentNote,
+      interest.createdAt
+    ]
+  );
+}
+
+async function persistReview(review: Review): Promise<void> {
+  if (!dbPool) {
+    return;
+  }
+
+  await dbPool.query(
+    `
+      INSERT INTO reviews (id, listing_id, author, rating, comment, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6);
+    `,
+    [review.id, review.listingId, review.author, review.rating, review.comment, review.createdAt]
+  );
+}
+
+async function queryListingsFromDatabase(options: {
+  school: School;
+  radiusKm: number;
+  minPrice: number;
+  maxPrice: number;
+  roomTypeFilter: string;
+  verifiedOnly: boolean;
+  requiredAmenities: string[];
+  role: UserRole;
+  landlordId: string;
+  sortBy: string;
+}): Promise<Array<Listing & { distanceKm: number }>> {
+  if (!dbPool) {
+    return [];
+  }
+
+  const {
+    school,
+    radiusKm,
+    minPrice,
+    maxPrice,
+    roomTypeFilter,
+    verifiedOnly,
+    requiredAmenities,
+    role,
+    landlordId,
+    sortBy
+  } = options;
+
+  const params: unknown[] = [school.longitude, school.latitude, school.id, minPrice, maxPrice];
+  const conditions: string[] = [
+    'listings.school_id = $3',
+    'listings.price >= $4',
+    'listings.price <= $5'
+  ];
+
+  if (role === 'student') {
+    params.push('approved');
+    conditions.push(`listings.status = $${params.length}`);
+  } else if (role === 'landlord') {
+    params.push(landlordId);
+    conditions.push(`listings.landlord_id = $${params.length}`);
+  }
+
+  if (roomTypeFilter === 'private' || roomTypeFilter === 'shared') {
+    params.push(roomTypeFilter);
+    conditions.push(`listings.room_type = $${params.length}`);
+  }
+
+  if (verifiedOnly) {
+    conditions.push('listings.is_verified = TRUE');
+  }
+
+  if (requiredAmenities.length > 0) {
+    params.push(JSON.stringify(requiredAmenities));
+    conditions.push(`listings.amenities @> $${params.length}::jsonb`);
+  }
+
+  params.push(radiusKm * 1000);
+  const radiusParamIndex = params.length;
+  const listingGeomExpr = 'COALESCE(listings.location_geom, ST_SetSRID(ST_MakePoint(listings.longitude, listings.latitude), 4326))';
+  conditions.push(
+    `ST_DWithin(${listingGeomExpr}::geography, school_point.geom::geography, $${radiusParamIndex})`
+  );
+
+  const orderByClause =
+    sortBy === 'price-asc'
+      ? 'listings.price ASC'
+      : sortBy === 'price-desc'
+        ? 'listings.price DESC'
+        : 'distance_km ASC';
+
+  const query = `
+    WITH school_point AS (
+      SELECT ST_SetSRID(ST_MakePoint($1, $2), 4326) AS geom
+    )
+    SELECT
+      listings.id,
+      listings.landlord_id,
+      listings.landlord_name,
+      listings.title,
+      listings.description,
+      listings.school_id,
+      listings.location_label,
+      listings.latitude,
+      listings.longitude,
+      listings.price,
+      listings.currency,
+      listings.room_type,
+      listings.amenities::jsonb AS amenities,
+      listings.photos::jsonb AS photos,
+      listings.is_verified,
+      listings.available_beds,
+      listings.status,
+      listings.admin_comment,
+      listings.created_at,
+      listings.updated_at,
+      listings.views,
+      ROUND((ST_DistanceSphere(${listingGeomExpr}, school_point.geom) / 1000.0)::numeric, 2)::float8 AS distance_km
+    FROM listings
+    CROSS JOIN school_point
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY ${orderByClause};
+  `;
+
+  const result = await dbPool.query<ListingDistanceRow>(query, params);
+  return result.rows.map(fromListingDistanceRow);
 }
 
 function nextId(prefix: string): string {
@@ -986,7 +1443,7 @@ app.get('/api/dashboard-summary', (req, res) => {
   });
 });
 
-app.get('/api/listings', (req, res) => {
+app.get('/api/listings', async (req, res) => {
   const auth = requireAuth(req, res);
   if (!auth) {
     return;
@@ -1007,6 +1464,32 @@ app.get('/api/listings', (req, res) => {
   const landlordId = auth.account.landlordId || '';
 
   const school = schools.find((item) => item.id === schoolId) || schools[0];
+
+  if (!school) {
+    res.status(400).json({ message: 'schoolId is invalid.' });
+    return;
+  }
+
+  if (dbPool) {
+    try {
+      const data = await queryListingsFromDatabase({
+        school,
+        radiusKm,
+        minPrice,
+        maxPrice,
+        roomTypeFilter,
+        verifiedOnly,
+        requiredAmenities,
+        role,
+        landlordId,
+        sortBy
+      });
+      res.json({ data, total: data.length, school });
+      return;
+    } catch {
+      // Fall back to in-memory filtering if SQL path fails.
+    }
+  }
 
   const visibleListings = listings.filter((item) => {
     if (role === 'admin') {
@@ -1106,6 +1589,13 @@ app.post('/api/listings', async (req, res) => {
     views: 0
   };
 
+  try {
+    await persistListing(listing);
+  } catch {
+    res.status(500).json({ message: 'Unable to save listing.' });
+    return;
+  }
+
   listings.push(listing);
   notify('listing-created', { listingId: listing.id });
   res.status(201).json({ data: listing });
@@ -1124,7 +1614,7 @@ app.get('/api/admin/pending-listings', (_req, res) => {
   res.json({ data });
 });
 
-app.post('/api/admin/listings/:id/review', (req, res) => {
+app.post('/api/admin/listings/:id/review', async (req, res) => {
   const auth = requireAuth(req, res);
   if (!auth) {
     return;
@@ -1150,6 +1640,14 @@ app.post('/api/admin/listings/:id/review', (req, res) => {
   listing.status = decision;
   listing.adminComment = comment || '';
   listing.updatedAt = new Date().toISOString();
+
+  try {
+    await persistListingModeration(listing);
+  } catch {
+    res.status(500).json({ message: 'Unable to update listing review state.' });
+    return;
+  }
+
   notify('listing-reviewed', { listingId: id, decision });
   res.json({ data: listing });
 });
@@ -1170,7 +1668,7 @@ app.get('/api/landlords/:landlordId/listings', (req, res) => {
   res.json({ data });
 });
 
-app.post('/api/interests', (req, res) => {
+app.post('/api/interests', async (req, res) => {
   const auth = requireAuth(req, res);
   if (!auth) {
     return;
@@ -1200,6 +1698,13 @@ app.post('/api/interests', (req, res) => {
     studentNote: studentNote || '',
     createdAt: new Date().toISOString()
   };
+
+  try {
+    await persistInterest(interest);
+  } catch {
+    res.status(500).json({ message: 'Unable to save student interest.' });
+    return;
+  }
 
   interests.push(interest);
   notify('interest-created', { listingId, interestId: interest.id });
@@ -1231,7 +1736,7 @@ app.get('/api/listings/:id/reviews', (req, res) => {
   res.json({ data });
 });
 
-app.post('/api/listings/:id/reviews', (req, res) => {
+app.post('/api/listings/:id/reviews', async (req, res) => {
   const auth = requireAuth(req, res);
   if (!auth) {
     return;
@@ -1268,6 +1773,13 @@ app.post('/api/listings/:id/reviews', (req, res) => {
     comment,
     createdAt: new Date().toISOString()
   };
+
+  try {
+    await persistReview(review);
+  } catch {
+    res.status(500).json({ message: 'Unable to save review.' });
+    return;
+  }
 
   reviews.push(review);
   notify('review-created', { listingId, reviewId: review.id });
@@ -1330,6 +1842,7 @@ app.post('/api/ai/recommendations', (req, res) => {
 async function startServer(): Promise<void> {
   try {
     await initializeAccountStore();
+    await initializeMarketplaceStore();
     void ensureSchoolDirectoryRefresh();
     app.listen(port, () => {
       console.log(`API listening on http://localhost:${port}`);
