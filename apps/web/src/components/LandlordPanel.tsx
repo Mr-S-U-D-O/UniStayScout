@@ -165,13 +165,16 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
                 </div>
 
                 <p className="muted landlord-photo-label">Add photos (upload files or paste URLs):</p>
-                <div className="photo-input-row" style={{marginBottom: '0.5rem'}}>
-                  <input type="file" multiple accept="image/*" onChange={(e) => {
-                    if (e.target.files) {
-                      setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
-                    }
-                    e.target.value = '';
-                  }} />
+                <div className="photo-input-row photo-input-row-spaced">
+                  <label className="file-upload-label">
+                    Upload image files
+                    <input type="file" multiple accept="image/*" title="Upload listing photos" onChange={(e) => {
+                      if (e.target.files) {
+                        setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+                      }
+                      e.target.value = '';
+                    }} />
+                  </label>
                 </div>
                 <div className="photo-input-row">
                   <input placeholder="https://…" value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} />

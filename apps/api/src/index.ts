@@ -7,6 +7,7 @@ import { Pool } from 'pg';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import { GoogleGenAI } from '@google/genai';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -24,6 +25,8 @@ type School = {
 };
 
 type ListingStatus = 'pending' | 'approved' | 'rejected';
+type InterestHandoffStatus = 'new' | 'landlord-notified';
+type InterestHandoffChannel = 'call' | 'sms' | 'whatsapp' | 'email';
 
 type Listing = {
   id: string;
@@ -56,6 +59,11 @@ type Interest = {
   studentName: string;
   studentPhone: string;
   studentNote: string;
+  handoffStatus: InterestHandoffStatus;
+  handedOffAt?: string;
+  handoffChannel?: InterestHandoffChannel;
+  handoffNote: string;
+  handedOffByAdminId?: string;
   createdAt: string;
 };
 
@@ -71,6 +79,8 @@ type Review = {
 type StudentProfile = {
   name: string;
   budget?: number;
+  budgetMax?: number;
+  budgetMin?: number;
   roomType?: 'private' | 'shared' | 'any';
 };
 
@@ -150,6 +160,11 @@ type InterestRow = {
   student_name: string;
   student_phone: string;
   student_note: string;
+  handoff_status: InterestHandoffStatus | null;
+  handed_off_at: string | null;
+  handoff_channel: InterestHandoffChannel | null;
+  handoff_note: string | null;
+  handed_off_by_admin_id: string | null;
   created_at: string;
 };
 
@@ -287,6 +302,11 @@ function fromInterestRow(row: InterestRow): Interest {
     studentName: row.student_name,
     studentPhone: row.student_phone,
     studentNote: row.student_note,
+    handoffStatus: row.handoff_status || 'new',
+    handedOffAt: row.handed_off_at || undefined,
+    handoffChannel: row.handoff_channel || undefined,
+    handoffNote: row.handoff_note || '',
+    handedOffByAdminId: row.handed_off_by_admin_id || undefined,
     createdAt: row.created_at
   };
 }
@@ -577,8 +597,39 @@ async function initializeMarketplaceStore(): Promise<void> {
       student_name TEXT NOT NULL,
       student_phone TEXT NOT NULL,
       student_note TEXT NOT NULL DEFAULT '',
+      handoff_status TEXT NOT NULL DEFAULT 'new' CHECK (handoff_status IN ('new', 'landlord-notified')),
+      handed_off_at TIMESTAMPTZ,
+      handoff_channel TEXT CHECK (handoff_channel IN ('call', 'sms', 'whatsapp', 'email')),
+      handoff_note TEXT NOT NULL DEFAULT '',
+      handed_off_by_admin_id TEXT,
       created_at TIMESTAMPTZ NOT NULL
     );
+  `);
+
+  await dbPool.query(`
+    ALTER TABLE interests
+    ADD COLUMN IF NOT EXISTS handoff_status TEXT NOT NULL DEFAULT 'new';
+  `);
+  await dbPool.query(`
+    ALTER TABLE interests
+    ADD COLUMN IF NOT EXISTS handed_off_at TIMESTAMPTZ;
+  `);
+  await dbPool.query(`
+    ALTER TABLE interests
+    ADD COLUMN IF NOT EXISTS handoff_channel TEXT;
+  `);
+  await dbPool.query(`
+    ALTER TABLE interests
+    ADD COLUMN IF NOT EXISTS handoff_note TEXT NOT NULL DEFAULT '';
+  `);
+  await dbPool.query(`
+    ALTER TABLE interests
+    ADD COLUMN IF NOT EXISTS handed_off_by_admin_id TEXT;
+  `);
+  await dbPool.query(`
+    UPDATE interests
+    SET handoff_status = 'new'
+    WHERE handoff_status IS NULL;
   `);
 
   await dbPool.query(`
@@ -606,7 +657,19 @@ async function initializeMarketplaceStore(): Promise<void> {
   listings = listingRows.rows.map(fromListingRow);
 
   const interestRows = await dbPool.query<InterestRow>(`
-    SELECT id, listing_id, student_user_id, student_name, student_phone, student_note, created_at
+    SELECT
+      id,
+      listing_id,
+      student_user_id,
+      student_name,
+      student_phone,
+      student_note,
+      handoff_status,
+      handed_off_at,
+      handoff_channel,
+      handoff_note,
+      handed_off_by_admin_id,
+      created_at
     FROM interests
     ORDER BY created_at DESC;
   `);
@@ -686,8 +749,21 @@ async function persistInterest(interest: Interest): Promise<void> {
 
   await dbPool.query(
     `
-      INSERT INTO interests (id, listing_id, student_user_id, student_name, student_phone, student_note, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7);
+      INSERT INTO interests (
+        id,
+        listing_id,
+        student_user_id,
+        student_name,
+        student_phone,
+        student_note,
+        handoff_status,
+        handed_off_at,
+        handoff_channel,
+        handoff_note,
+        handed_off_by_admin_id,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
     `,
     [
       interest.id,
@@ -696,7 +772,38 @@ async function persistInterest(interest: Interest): Promise<void> {
       interest.studentName,
       interest.studentPhone,
       interest.studentNote,
+      interest.handoffStatus,
+      interest.handedOffAt || null,
+      interest.handoffChannel || null,
+      interest.handoffNote,
+      interest.handedOffByAdminId || null,
       interest.createdAt
+    ]
+  );
+}
+
+async function persistInterestHandoff(interest: Interest): Promise<void> {
+  if (!dbPool) {
+    return;
+  }
+
+  await dbPool.query(
+    `
+      UPDATE interests
+      SET handoff_status = $2,
+          handed_off_at = $3,
+          handoff_channel = $4,
+          handoff_note = $5,
+          handed_off_by_admin_id = $6
+      WHERE id = $1;
+    `,
+    [
+      interest.id,
+      interest.handoffStatus,
+      interest.handedOffAt || null,
+      interest.handoffChannel || null,
+      interest.handoffNote,
+      interest.handedOffByAdminId || null
     ]
   );
 }
@@ -1235,12 +1342,12 @@ app.post('/api/media/upload', upload.single('file'), (req, res) => {
   const auth = requireAuth(req, res);
   if (!auth) return;
   if (!requireRole(auth, ['landlord', 'admin'], res)) return;
-  
+
   if (!req.file) {
     res.status(400).json({ message: 'No file uploaded.' });
     return;
   }
-  
+
   const fileUrl = `/uploads/${req.file.filename}`;
   res.json({ data: { url: fileUrl } });
 });
@@ -1644,7 +1751,7 @@ app.get('/api/admin/analytics/proximity', async (req, res) => {
     res.status(503).json({ message: 'PostGIS not available for analytics.' });
     return;
   }
-  
+
   try {
     const result = await dbPool.query(`
       WITH school_points AS (
@@ -1652,8 +1759,8 @@ app.get('/api/admin/analytics/proximity', async (req, res) => {
         UNION ALL
         SELECT 'wits-braamfontein' as id, ST_SetSRID(ST_MakePoint(28.0305, -26.1929), 4326) as geom
       )
-      SELECT 
-        l.school_id, 
+      SELECT
+        l.school_id,
         COUNT(l.id) as listing_count,
         ROUND(AVG(ST_DistanceSphere(l.location_geom, s.geom) / 1000.0)::numeric, 2)::float8 as avg_distance_km
       FROM listings l
@@ -1661,12 +1768,65 @@ app.get('/api/admin/analytics/proximity', async (req, res) => {
       WHERE l.status = 'approved' AND l.location_geom IS NOT NULL
       GROUP BY l.school_id;
     `);
-    
+
     res.json({ data: result.rows });
   } catch (err) {
     console.error('Analytics query failed:', err);
     res.status(500).json({ message: 'Analytics query failed.' });
   }
+});
+
+app.post('/api/admin/leads/:id/handoff', async (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) return;
+  if (!requireRole(auth, ['admin'], res)) return;
+
+  const interestId = req.params.id;
+  const { handoffChannel, handoffNote } = req.body;
+
+  if (dbPool) {
+    try {
+      const result = await dbPool.query(`
+        UPDATE interests
+        SET handoff_status = 'landlord-notified',
+            handed_off_at = NOW(),
+            handoff_channel = $1,
+            handoff_note = $2,
+            handed_off_by_admin_id = $3
+        WHERE id = $4
+        RETURNING *
+      `, [handoffChannel, handoffNote, auth.account.id, interestId]);
+
+      if (result.rows.length === 0) {
+        res.status(404).json({ message: 'Lead not found' });
+        return;
+      }
+      res.json({ data: { message: 'Lead handoff successful' } });
+      return;
+    } catch (err) {
+      console.error('Failed to handoff lead:', err);
+      res.status(500).json({ message: 'Database error handling lead handoff' });
+      return;
+    }
+  }
+
+  // In-memory fallback
+  const leadIdx = interests.findIndex(i => i.id === interestId);
+  if (leadIdx === -1) {
+    res.status(404).json({ message: 'Lead not found' });
+    return;
+  }
+
+  interests[leadIdx] = {
+    ...interests[leadIdx],
+    handoffStatus: 'landlord-notified',
+    handedOffAt: new Date().toISOString(),
+    handoffChannel,
+    handoffNote,
+    handedOffByAdminId: auth.account.id
+  };
+
+  res.json({ data: { message: 'Lead handoff successful' } });
 });
 
 app.get('/api/listings', async (req, res) => {
@@ -1922,6 +2082,8 @@ app.post('/api/interests', async (req, res) => {
     studentName,
     studentPhone,
     studentNote: studentNote || '',
+    handoffStatus: 'new',
+    handoffNote: '',
     createdAt: new Date().toISOString()
   };
 
@@ -1947,13 +2109,65 @@ app.get('/api/admin/interests', (_req, res) => {
   }
 
   const data = interests
-    .map((item) => ({
-      ...item,
-      listingTitle: listings.find((listing) => listing.id === item.listingId)?.title || 'Unknown listing'
-    }))
+    .map((item) => {
+      const listing = listings.find((currentListing) => currentListing.id === item.listingId);
+      const landlord = listing
+        ? accounts.find((account) => account.role === 'landlord' && account.landlordId === listing.landlordId)
+        : undefined;
+
+      return {
+        ...item,
+        listingTitle: listing?.title || 'Unknown listing',
+        landlordName: landlord?.name || listing?.landlordName || 'Unknown landlord',
+        landlordPhone: landlord?.phone || '',
+        landlordEmail: landlord?.email || ''
+      };
+    })
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
   res.json({ data });
+});
+
+app.post('/api/admin/interests/:id/handoff', async (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+  if (!requireRole(auth, ['admin'], res)) {
+    return;
+  }
+
+  const interestId = req.params.id;
+  const { channel, note } = req.body as { channel?: InterestHandoffChannel; note?: string };
+  const validChannels: InterestHandoffChannel[] = ['call', 'sms', 'whatsapp', 'email'];
+  const selectedChannel = channel || 'call';
+
+  if (!validChannels.includes(selectedChannel)) {
+    res.status(400).json({ message: 'channel must be one of call, sms, whatsapp, email.' });
+    return;
+  }
+
+  const interest = interests.find((item) => item.id === interestId);
+  if (!interest) {
+    res.status(404).json({ message: 'Interest not found.' });
+    return;
+  }
+
+  interest.handoffStatus = 'landlord-notified';
+  interest.handedOffAt = new Date().toISOString();
+  interest.handoffChannel = selectedChannel;
+  interest.handoffNote = String(note || '').trim();
+  interest.handedOffByAdminId = auth.account.id;
+
+  try {
+    await persistInterestHandoff(interest);
+  } catch {
+    res.status(500).json({ message: 'Unable to update lead handoff state.' });
+    return;
+  }
+
+  notify('interest-handoff-updated', { interestId: interest.id });
+  res.json({ data: interest });
 });
 
 app.get('/api/listings/:id/reviews', (req, res) => {
@@ -2012,7 +2226,7 @@ app.post('/api/listings/:id/reviews', async (req, res) => {
   res.status(201).json({ data: review });
 });
 
-app.post('/api/ai/recommendations', (req, res) => {
+app.post('/api/ai/recommendations', async (req, res) => {
   const { profile, mapContext, conversation } = req.body as {
     profile?: StudentProfile;
     mapContext?: MapContext;
@@ -2021,7 +2235,7 @@ app.post('/api/ai/recommendations', (req, res) => {
 
   const school = schools.find((item) => item.id === mapContext?.schoolId) || schools[0];
   const radiusKm = Number(mapContext?.radiusKm || 5);
-  const budget = Number(profile?.budget || 999999);
+  const budget = Number(profile?.budget || profile?.budgetMax || 999999);
   const roomType = profile?.roomType || 'any';
 
   const candidates = listings
@@ -2037,29 +2251,58 @@ app.post('/api/ai/recommendations', (req, res) => {
           (computedDistance <= radiusKm ? 2 : 0)
       };
     })
-    .sort((a, b) => b.score - a.score || a.price - b.price)
-    .slice(0, 3);
+    .sort((a, b) => b.score - a.score || a.price - b.price);
 
+  const bestMatches = candidates.slice(0, 3);
   const latestUserMessage = conversation?.slice().reverse().find((entry) => entry.role === 'user')?.message || '';
+
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const prompt = `
+You are an AI accommodation assistant for university students.
+Student profile: ${JSON.stringify(profile)}
+Map Context (Top candidates from DB): ${JSON.stringify(bestMatches.map(l => ({ id: l.id, title: l.title, price: l.price, roomType: l.roomType, amenities: l.amenities, distanceKm: l.distanceKm })))}
+Conversation history: ${JSON.stringify(conversation)}
+
+Based on the conversation and the student's profile, select the best matching listings from the Map Context.
+Return a valid JSON object strictly matching this schema:
+{
+  "questions": ["Follow-up question 1"], // 1 or 2 conversational follow-up questions
+  "recommendedListingIds": ["lst-123", "lst-456"], // Array of IDs from the Map Context that best match exactly
+  "rationale": "A conversational friendly message (2 sentences) explaining why these options were chosen specifically for them."
+}
+`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' }
+      });
+
+      const output = JSON.parse(response.text || '{}');
+      res.json({
+        questions: output.questions || [],
+        recommendedListingIds: output.recommendedListingIds || [],
+        rationale: output.rationale || 'Here are some recommendations based on your preferences.',
+        contextEcho: { profile, mapContext, latestUserMessage }
+      });
+      return;
+    } catch (err) {
+      console.error('Gemini AI failed, falling back to heuristic:', err);
+    }
+  }
+
+  // Heuristic Fallback
   const questions: string[] = [];
-
-  if (!profile?.budget) {
-    questions.push('What monthly budget range are you targeting in ZAR?');
-  }
-  if (!profile?.roomType || profile.roomType === 'any') {
-    questions.push('Would you prefer a private room or shared accommodation?');
-  }
-  if (radiusKm < 3) {
-    questions.push('Would you like to increase your search radius for more options?');
-  }
-
-  if (questions.length === 0) {
-    questions.push('Do you want to prioritize price, distance, or amenities next?');
-  }
+  if (!profile?.budgetMax) questions.push('What monthly budget range are you targeting in ZAR?');
+  if (!profile?.roomType || profile.roomType === 'any') questions.push('Would you prefer a private room or shared accommodation?');
+  if (radiusKm < 3) questions.push('Would you like to increase your search radius for more options?');
+  if (questions.length === 0) questions.push('Do you want to prioritize price, distance, or amenities next?');
 
   res.json({
     questions,
-    recommendedListingIds: candidates.map((item) => item.id),
+    recommendedListingIds: bestMatches.map((item) => item.id),
     rationale: `I checked approved options near ${school.name} and ranked by your budget, preferred room type, and radius.`,
     contextEcho: { profile, mapContext, latestUserMessage }
   });

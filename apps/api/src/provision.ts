@@ -51,6 +51,11 @@ type ProvisionInterest = {
   studentName: string;
   studentPhone: string;
   studentNote?: string;
+  handoffStatus?: 'new' | 'landlord-notified';
+  handedOffAt?: string;
+  handoffChannel?: 'call' | 'sms' | 'whatsapp' | 'email';
+  handoffNote?: string;
+  handedOffByAdminId?: string;
   createdAt?: string;
 };
 
@@ -251,15 +256,33 @@ async function importInterests(pool: Pool, interests: ProvisionInterest[] = []):
 
     await pool.query(
       `
-        INSERT INTO interests (id, listing_id, student_user_id, student_name, student_phone, student_note, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO interests (
+          id,
+          listing_id,
+          student_user_id,
+          student_name,
+          student_phone,
+          student_note,
+          handoff_status,
+          handed_off_at,
+          handoff_channel,
+          handoff_note,
+          handed_off_by_admin_id,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (id)
         DO UPDATE SET
           listing_id = EXCLUDED.listing_id,
           student_user_id = EXCLUDED.student_user_id,
           student_name = EXCLUDED.student_name,
           student_phone = EXCLUDED.student_phone,
-          student_note = EXCLUDED.student_note;
+          student_note = EXCLUDED.student_note,
+          handoff_status = EXCLUDED.handoff_status,
+          handed_off_at = EXCLUDED.handed_off_at,
+          handoff_channel = EXCLUDED.handoff_channel,
+          handoff_note = EXCLUDED.handoff_note,
+          handed_off_by_admin_id = EXCLUDED.handed_off_by_admin_id;
       `,
       [
         id,
@@ -268,6 +291,11 @@ async function importInterests(pool: Pool, interests: ProvisionInterest[] = []):
         interest.studentName,
         interest.studentPhone,
         interest.studentNote || '',
+        interest.handoffStatus || 'new',
+        interest.handedOffAt || null,
+        interest.handoffChannel || null,
+        interest.handoffNote || '',
+        interest.handedOffByAdminId || null,
         createdAt
       ]
     );

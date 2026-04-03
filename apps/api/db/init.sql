@@ -70,8 +70,28 @@ CREATE TABLE IF NOT EXISTS interests (
   student_name TEXT NOT NULL,
   student_phone TEXT NOT NULL,
   student_note TEXT NOT NULL DEFAULT '',
+  handoff_status TEXT NOT NULL DEFAULT 'new' CHECK (handoff_status IN ('new', 'landlord-notified')),
+  handed_off_at TIMESTAMPTZ,
+  handoff_channel TEXT CHECK (handoff_channel IN ('call', 'sms', 'whatsapp', 'email')),
+  handoff_note TEXT NOT NULL DEFAULT '',
+  handed_off_by_admin_id TEXT,
   created_at TIMESTAMPTZ NOT NULL
 );
+
+ALTER TABLE interests
+ADD COLUMN IF NOT EXISTS handoff_status TEXT NOT NULL DEFAULT 'new';
+
+ALTER TABLE interests
+ADD COLUMN IF NOT EXISTS handed_off_at TIMESTAMPTZ;
+
+ALTER TABLE interests
+ADD COLUMN IF NOT EXISTS handoff_channel TEXT;
+
+ALTER TABLE interests
+ADD COLUMN IF NOT EXISTS handoff_note TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE interests
+ADD COLUMN IF NOT EXISTS handed_off_by_admin_id TEXT;
 
 CREATE TABLE IF NOT EXISTS reviews (
   id TEXT PRIMARY KEY,

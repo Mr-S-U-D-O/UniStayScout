@@ -1309,6 +1309,19 @@ button:disabled {
   gap: 0.5rem;
 }
 
+.photo-input-row-spaced {
+  margin-bottom: 0.5rem;
+}
+
+.file-upload-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 100%;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .photo-drop-zone {
   border: 2px dashed #cbd5e1;
   border-radius: 10px;
@@ -1437,6 +1450,28 @@ button:disabled {
 
 .admin-privileges li {
   margin-bottom: 0.35rem;
+}
+
+.admin-superuser-panel {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 8px;
+}
+
+.admin-superuser-title {
+  color: #3b82f6;
+  margin-bottom: 0.5rem;
+}
+
+.admin-superuser-note {
+  margin-bottom: 1rem;
+}
+
+.admin-superuser-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .queue-meta {

@@ -42,11 +42,11 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Admin Panel expanded to include Superuser invitation UI.
 - Listing media upload flow converted from text URLs to actual multipart file uploads with multer.
 - Playwright E2E test added for role flows and map behaviors.
+- Admin lead handoff endpoints and delivery workflow designed and implemented.
+- Model-backed AI service integration (Google Gemini) defined and integrated for live conversational mapping recommendations.
 
 ## In Progress
-- Lock down first-admin bootstrap using environment variables (remove hardcoded credentials).
-- Design and implement admin lead handoff endpoints and delivery workflow.
-- Define model-backed AI service integration for live conversational recommendations.
+- Lock down first-admin bootstrap using environment variables (actually, this was already done natively, keeping it verified).
 
 ## Backlog
 
@@ -84,6 +84,8 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Admin Panel UI expanded with Superuser admin invitation capabilities.
 - Added a new PostGIS analytics proximity endpoint.
 - Added Playwright end-to-end test spec for mapping and role auth behaviors.
+- Implemented `/api/admin/leads/:id/handoff` endpoint and admin dashboard UI to route student leads to landlords.
+- Replaced mock AI fallback logic with a `@google/genai` Gemini integration for smart matching.
 
 ## Working Rules
 - Update this file whenever priorities change, work is completed, or major decisions are made.

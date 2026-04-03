@@ -51,6 +51,14 @@ export type Interest = {
   studentPhone: string;
   createdAt: string;
   studentNote: string;
+  landlordName?: string;
+  landlordPhone?: string;
+  landlordEmail?: string;
+  handoffStatus?: 'new' | 'landlord-notified';
+  handedOffAt?: string;
+  handoffChannel?: 'call' | 'sms' | 'whatsapp' | 'email';
+  handoffNote?: string;
+  handedOffByAdminId?: string;
 };
 
 export type ChatMessage = {

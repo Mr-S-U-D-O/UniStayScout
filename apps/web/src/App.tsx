@@ -334,6 +334,9 @@ function App() {
     source.addEventListener('interest-created', () => {
       if (role === 'admin') loadAdminData().catch(() => {});
     });
+    source.addEventListener('interest-handoff-updated', () => {
+      if (role === 'admin') loadAdminData().catch(() => {});
+    });
     source.addEventListener('review-created', () => {
       if (selectedListingId) loadReviews(selectedListingId).catch(() => setReviews([]));
     });
@@ -467,6 +470,14 @@ function App() {
     }
   }
 
+  async function handoffInterest(interestId: string, channel: 'call' | 'sms' | 'whatsapp' | 'email', note: string) {
+    if (!authToken) return;
+    await apiPost(`/api/admin/leads/${interestId}/handoff`, { handoffChannel: channel, handoffNote: note }, authToken);
+    setStatusMessage('Lead handoff recorded. Landlord has been notified.');
+    await loadAdminData();
+    await refreshForRole();
+  }
+
   // ─── Render ───────────────────────────────────────────────────────────────
   if (!authUser) {
     return (
@@ -582,6 +593,7 @@ function App() {
               adminInsights={adminInsights}
               reviewListing={reviewListing}
               inviteAdmin={inviteAdmin}
+              handoffInterest={handoffInterest}
             />
           )}
         </aside>

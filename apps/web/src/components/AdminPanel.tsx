@@ -9,6 +9,7 @@ type Props = {
   adminInsights: AdminInsights | null;
   reviewListing: (id: string, decision: 'approved' | 'rejected', comment: string) => Promise<void>;
   inviteAdmin: (data: { name: string; email: string; phone: string; password: string }) => Promise<void>;
+  handoffInterest: (interestId: string, channel: 'call' | 'sms' | 'whatsapp' | 'email', note: string) => Promise<void>;
 };
 
 const cardVariants = {
@@ -28,9 +29,10 @@ const privileges = [
   'Oversee supply quality and trust signals'
 ];
 
-export function AdminPanel({ authUser, pendingListings, interests, adminInsights, reviewListing, inviteAdmin }: Props) {
+export function AdminPanel({ authUser, pendingListings, interests, adminInsights, reviewListing, inviteAdmin, handoffInterest }: Props) {
   const [inviteForm, setInviteForm] = useState({ name: '', email: '', phone: '', password: '' });
   const [isInviting, setIsInviting] = useState(false);
+  const [handingOffId, setHandingOffId] = useState<string>('');
   const newestLeads = interests
     .slice()
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -102,13 +104,13 @@ export function AdminPanel({ authUser, pendingListings, interests, adminInsights
             ))}
           </ul>
         </div>
-        
+
         {authUser?.isSuperUser && (
-          <div className="admin-superuser-panel" style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(59,130,246,0.1)', borderRadius: '8px' }}>
-            <h4 style={{ color: '#3b82f6', marginBottom: '0.5rem' }}>Superuser Actions</h4>
-            <p className="muted" style={{ marginBottom: '1rem' }}>Invite a new admin to the platform.</p>
-            <form 
-              style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
+          <div className="admin-superuser-panel">
+            <h4 className="admin-superuser-title">Superuser Actions</h4>
+            <p className="muted admin-superuser-note">Invite a new admin to the platform.</p>
+            <form
+              className="admin-superuser-form"
               onSubmit={async (e) => {
                 e.preventDefault();
                 setIsInviting(true);
@@ -192,6 +194,31 @@ export function AdminPanel({ authUser, pendingListings, interests, adminInsights
               </p>
               <p>📞 {lead.studentPhone}</p>
               <p className="muted">{lead.studentNote || 'No note provided.'}</p>
+              <p className="muted">Landlord: {lead.landlordName || 'Unknown landlord'}</p>
+              <p className="muted">Landlord phone: {lead.landlordPhone || 'Unavailable'}</p>
+              <p className="muted">Landlord email: {lead.landlordEmail || 'Unavailable'}</p>
+              <p className="muted">
+                Handoff: {lead.handoffStatus === 'landlord-notified' ? 'Landlord notified' : 'Pending handoff'}
+                {lead.handedOffAt ? ` (${new Date(lead.handedOffAt).toLocaleString()})` : ''}
+              </p>
+              {lead.handoffNote && <p className="muted">Handoff note: {lead.handoffNote}</p>}
+              {lead.handoffStatus !== 'landlord-notified' && (
+                <button
+                  type="button"
+                  disabled={handingOffId === lead.id}
+                  onClick={async () => {
+                    const note = window.prompt('Optional note for landlord handoff:', '') || '';
+                    setHandingOffId(lead.id);
+                    try {
+                      await handoffInterest(lead.id, 'call', note);
+                    } finally {
+                      setHandingOffId('');
+                    }
+                  }}
+                >
+                  {handingOffId === lead.id ? 'Saving…' : 'Mark Landlord Notified'}
+                </button>
+              )}
               <p className="muted">{new Date(lead.createdAt).toLocaleString()}</p>
             </motion.article>
           ))}
