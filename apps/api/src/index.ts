@@ -3,6 +3,8 @@ import type { Context } from 'hono';
 import { Pool } from '@neondatabase/serverless';
 import { compare, hash } from 'bcryptjs';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { serve } from '@hono/node-server';
+import 'dotenv/config';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -26,7 +28,8 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 app.use('*', async (c, next) => {
   const origin = c.req.header('Origin');
-  const allowlist = (c.env.CORS_ALLOWED_ORIGINS || '')
+  const env = c.env || ({} as Bindings);
+  const allowlist = (env.CORS_ALLOWED_ORIGINS || '')
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
@@ -46,6 +49,15 @@ app.use('*', async (c, next) => {
   }
 
   await next();
+});
+
+app.onError((err, c) => {
+  console.error('API Error:', err);
+  return c.json({
+    message: 'Internal Server Error',
+    error: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  }, 500);
 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -936,3 +948,23 @@ app.get('/api/events', (c) => {
 });
 
 export default app;
+
+const isProduction = process.env.NODE_ENV === 'production';
+export const isLocal = !isProduction || !('env' in globalThis);
+
+if (isLocal) {
+  const port = Number(process.env.PORT || 4000);
+  console.log(`🚀 UniStayScout API is running locally on http://localhost:${port}`);
+  try {
+    serve({
+      fetch: (req) => {
+        // Provide environment from process.env for local development
+        return app.fetch(req, process.env as any);
+      },
+      port
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
