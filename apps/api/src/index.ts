@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { Pool } from '@neondatabase/serverless';
 import { compare, hash } from 'bcryptjs';
@@ -13,7 +14,6 @@ type AccountRole = 'student' | 'landlord' | 'admin';
 type Bindings = {
   DATABASE_URL: string;
   AUTH_TOKEN_SECRET: string;
-  CORS_ALLOWED_ORIGINS?: string;
   CLOUDINARY_CLOUD_NAME: string;
   CLOUDINARY_API_KEY: string;
   CLOUDINARY_API_SECRET: string;
@@ -24,22 +24,7 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-app.use('*', cors({
-  origin: (origin, c) => {
-    const configured = (c.env.CORS_ALLOWED_ORIGINS || '')
-      .split(',')
-      .map((value: string) => value.trim())
-      .filter(Boolean);
-
-    if (configured.length === 0) {
-      // Fallback keeps local dev working when no allowlist is configured.
-      return '*';
-    }
-
-    return origin && configured.includes(origin) ? origin : null;
-  },
-  allowHeaders: ['Authorization', 'Content-Type']
-}));
+app.use('*', cors());
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -47,76 +32,16 @@ function nextId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
-type TokenPayload = {
-  userId: string;
-  role: AccountRole;
-  exp: number;
-};
-
-function toBase64Url(input: string): string {
-  return btoa(input).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function fromBase64Url(input: string): string {
-  const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
-  return atob(normalized + padding);
-}
-
-async function createHmac(content: string, secret: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(content));
-  return btoa(String.fromCharCode(...new Uint8Array(signature)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
-}
-
-async function verifyHmac(content: string, signature: string, secret: string): Promise<boolean> {
-  const expected = await createHmac(content, secret);
-  if (expected.length !== signature.length) return false;
-
-  let diff = 0;
-  for (let index = 0; index < expected.length; index += 1) {
-    diff |= expected.charCodeAt(index) ^ signature.charCodeAt(index);
-  }
-
-  return diff === 0;
-}
-
-function resolveAuthSecret(c: any): string | null {
-  const secret = String(c.env.AUTH_TOKEN_SECRET || '').trim();
-  if (secret.length < 32) {
-    return null;
-  }
-  return secret;
-}
-
-async function getAccountFromToken(c: any) {
+async function getAccountFromToken(c: Context<{ Bindings: Bindings }>) {
   const authHeader = c.req.header('Authorization');
   if (!authHeader?.startsWith('Bearer ')) return null;
   const token = authHeader.substring(7);
-
+  
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-
-    const secret = resolveAuthSecret(c);
-    if (!secret) return null;
-
-    const [headerPart, payloadPart, signaturePart] = parts;
-    const message = `${headerPart}.${payloadPart}`;
-    const isValid = await verifyHmac(message, signaturePart, secret);
-    if (!isValid) return null;
-
-    const payload = JSON.parse(fromBase64Url(payloadPart)) as TokenPayload;
-
+    const payload = JSON.parse(atob(parts[1])) as { userId: string; exp: number };
+    
     if (payload.exp < Date.now() / 1000) return null;
 
     const db = new Pool({ connectionString: c.env.DATABASE_URL });
@@ -126,35 +51,26 @@ async function getAccountFromToken(c: any) {
     if (result.rows.length === 0) return null;
     const row = result.rows[0];
     return {
-      id: row.id,
-      name: row.name,
-      email: row.email,
-      phone: row.phone,
+      id: row.id as string,
+      name: row.name as string,
+      email: row.email as string,
+      phone: row.phone as string,
       role: row.role as AccountRole,
-      landlordId: row.landlord_id,
-      isSuperUser: row.is_super_user
+      landlordId: row.landlord_id as string | null,
+      isSuperUser: row.is_super_user as boolean
     };
   } catch {
     return null;
   }
 }
 
-async function createToken(account: any, c: any) {
-  const secret = resolveAuthSecret(c);
-  if (!secret) {
-    throw new Error('AUTH_TOKEN_SECRET must be configured with at least 32 characters.');
-  }
-
-  const payload: TokenPayload = {
+function createToken(account: { id: string; role: string }) {
+  const payload = {
     userId: account.id,
     role: account.role,
     exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24) // 24h
   };
-
-  const headerPart = toBase64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payloadPart = toBase64Url(JSON.stringify(payload));
-  const signaturePart = await createHmac(`${headerPart}.${payloadPart}`, secret);
-  return `${headerPart}.${payloadPart}.${signaturePart}`;
+  return `header.${btoa(JSON.stringify(payload))}.signature`;
 }
 
 // ─── Endpoints ──────────────────────────────────────────────────────────────
@@ -176,7 +92,7 @@ app.post('/api/auth/register', async (c) => {
       [id, name, email.toLowerCase().trim(), phone, passwordHash, role, landlordId]
     );
     const account = result.rows[0];
-    return c.json({ data: account, token: await createToken(account, c) }, 201);
+    return c.json({ data: account, token: createToken(account) }, 201);
   } finally {
     await db.end();
   }
@@ -191,7 +107,7 @@ app.post('/api/auth/login', async (c) => {
     const account = result.rows[0];
     const match = await compare(password, account.password_hash);
     if (!match) return c.json({ message: 'Invalid credentials' }, 401);
-    return c.json({ data: account, token: await createToken(account, c) });
+    return c.json({ data: account, token: createToken(account) });
   } finally {
     await db.end();
   }
@@ -210,19 +126,7 @@ app.get('/api/schools', async (c) => {
 
 // --- Listings ---
 app.get('/api/listings', async (c) => {
-  const requestedStatus = c.req.query('status') || 'approved';
-  const allowedStatuses: ListingStatus[] = ['pending', 'approved', 'rejected'];
-  const status = allowedStatuses.includes(requestedStatus as ListingStatus)
-    ? (requestedStatus as ListingStatus)
-    : 'approved';
-
-  if (status !== 'approved') {
-    const user = await getAccountFromToken(c);
-    if (!user || user.role !== 'admin') {
-      return c.json({ message: 'Forbidden' }, 403);
-    }
-  }
-
+  const status = c.req.query('status') || 'approved';
   const db = new Pool({ connectionString: c.env.DATABASE_URL });
   try {
     const result = await db.query('SELECT * FROM listings WHERE status = $1', [status]);
