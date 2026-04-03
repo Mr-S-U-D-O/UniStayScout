@@ -29,6 +29,7 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - PostGIS geometry column/indexes and SQL radius filtering for listings implemented.
 - Role-intent dashboard split implemented: student discovery map, landlord portfolio workspace, admin operations workspace.
 - Backend-driven landlord/admin KPI endpoints implemented and wired into role dashboards.
+- Admin command-center UI implemented with governance visibility, privileges, user-mix metrics, and operations queues.
 - Advanced map filtering, sorting, verified-only, and amenity filtering implemented.
 - Live school directory discovery from OpenStreetMap added.
 - Geocoded landlord property locations added.
@@ -37,7 +38,7 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 ## In Progress
 - Add login/register validation refinements and suspicious-login audit logs.
 - Keep tightening the UI/UX foundation without changing product behavior.
-- Add PostGIS proximity analytics endpoints and admin queue insights.
+- Add PostGIS proximity analytics endpoints and deeper admin SLA/risk insights.
 
 ## Backlog
 - Add production-grade file upload pipeline for listing media.
@@ -68,6 +69,7 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - PostGIS SQL filtering for listing proximity was added with in-memory fallback.
 - Role-specific dashboard intent separation was added to remove cross-role search behavior.
 - Landlord and admin dashboards were switched to backend-provided KPI insights.
+- Admin dashboard redesign now surfaces selection policy, privileges, and operational health in one console.
 - Live build validation passed after consolidation work.
 
 ## Working Rules

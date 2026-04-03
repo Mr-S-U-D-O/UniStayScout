@@ -33,8 +33,8 @@ export function AdminPanel({ pendingListings, interests, adminInsights, reviewLi
     .slice(0, 5);
 
   return (
-    <>
-      <div className="section-card admin-hero-card">
+    <div className="admin-dashboard-grid">
+      <div className="section-card admin-hero-card admin-card-hero">
         <div className="section-head">
           <h2>Admin Command Center</h2>
           <p className="muted">Platform oversight, moderation control, and governance visibility.</p>
@@ -60,7 +60,7 @@ export function AdminPanel({ pendingListings, interests, adminInsights, reviewLi
         </div>
       </div>
 
-      <div className="section-card">
+      <div className="section-card admin-card-governance">
         <div className="section-head">
           <h3>Governance and Access</h3>
           <p className="muted">How admin access is controlled and what this role can do.</p>
@@ -100,7 +100,7 @@ export function AdminPanel({ pendingListings, interests, adminInsights, reviewLi
         </div>
       </div>
 
-      <div className="section-card">
+      <div className="section-card admin-card-queue">
         <div className="section-head">
           <h3>Moderation Queue</h3>
           <p className="muted">Highest-impact operational actions right now.</p>
@@ -142,7 +142,7 @@ export function AdminPanel({ pendingListings, interests, adminInsights, reviewLi
         </div>
       </div>
 
-      <div className="section-card">
+      <div className="section-card admin-card-leads">
         <div className="section-head">
           <h3>Lead Operations</h3>
           <p className="muted">Most recent student demand signals.</p>
@@ -170,6 +170,6 @@ export function AdminPanel({ pendingListings, interests, adminInsights, reviewLi
           ))}
         </div>
       </div>
-    </>
+    </div>
   );
 }

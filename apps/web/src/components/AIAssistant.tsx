@@ -1,6 +1,11 @@
 import React, { useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChatMessage, Listing, StudentProfile } from '../types';
+import {
+  IconSearch, IconFilter, IconMessageCircle, IconSend,
+  IconAlertTriangle, IconSettings, IconGraduationCap, IconClock,
+  AmenityIcon, IconWalk, IconBus, IconCar, IconShield,
+} from './Icons';
 
 const amenityOptions = ['wifi', 'security', 'laundry', 'parking', 'backup-power'];
 
@@ -63,34 +68,32 @@ export function AIAssistant({
       {studentProfile && (
         <div className="section-card ai-context-card">
           <div className="ai-context-header">
-            <span className="ai-dot">🤖</span>
-            <strong>AI Context Loaded</strong>
+            <IconSettings size={15} />
+            <strong>AI Context Active</strong>
           </div>
           <div className="ai-context-tags">
             {studentProfile.university && (
-              <span className="context-pill">🏛️ {studentProfile.university}</span>
+              <span className="context-pill"><IconGraduationCap size={11} />{studentProfile.university}</span>
             )}
             {studentProfile.yearOfStudy && (
-              <span className="context-pill">📅 Year {studentProfile.yearOfStudy}</span>
+              <span className="context-pill"><IconClock size={11} />Year {studentProfile.yearOfStudy}</span>
             )}
             <span className="context-pill">
-              💰 R{studentProfile.budgetMin.toLocaleString()}–R{studentProfile.budgetMax.toLocaleString()}
+              R{studentProfile.budgetMin.toLocaleString()}–R{studentProfile.budgetMax.toLocaleString()}
             </span>
             <span className="context-pill">
-              {studentProfile.roomType === 'any' ? '🏠 Any room' : studentProfile.roomType === 'private' ? '🚪 Private' : '🛏️ Shared'}
+              {studentProfile.roomType === 'any' ? 'Any room' : studentProfile.roomType === 'private' ? 'Private' : 'Shared'}
             </span>
             <span className="context-pill">
-              {studentProfile.transportMode === 'walking' ? '🚶 Walking' : studentProfile.transportMode === 'public-transport' ? '🚌 Transport' : '🚗 Car'}
+              {studentProfile.transportMode === 'walking' ? <IconWalk size={11} /> : studentProfile.transportMode === 'public-transport' ? <IconBus size={11} /> : <IconCar size={11} />}
+              {studentProfile.transportMode}
             </span>
             <span className="context-pill">
-              {studentProfile.securityPriority === 'high' ? '🔴 High security' : studentProfile.securityPriority === 'medium' ? '🟡 Medium security' : '🟢 Low security'}
+              <IconShield size={11} /> {studentProfile.securityPriority} security
             </span>
-            {studentProfile.lifestyle.slice(0, 2).map((l) => (
-              <span key={l} className="context-pill">✨ {l}</span>
-            ))}
           </div>
           <button type="button" className="ai-edit-profile-btn" onClick={onOpenProfile}>
-            Edit preferences →
+            Edit preferences
           </button>
         </div>
       )}
@@ -98,19 +101,19 @@ export function AIAssistant({
       {!studentProfile && (
         <div className="section-card ai-context-card incomplete">
           <div className="ai-context-header">
-            <span className="ai-dot">⚠️</span>
+            <IconAlertTriangle size={15} />
             <strong>Profile incomplete</strong>
           </div>
-          <p className="muted" style={{ fontSize: '0.88rem', marginTop: '0.35rem' }}>
-            Complete your profile so the AI can make personalised recommendations.
+          <p className="muted" style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
+            Complete your profile to unlock personalised AI recommendations.
           </p>
-          <button type="button" onClick={onOpenProfile}>Complete Profile →</button>
+          <button type="button" onClick={onOpenProfile}>Complete profile</button>
         </div>
       )}
 
       {/* Map Filters */}
       <section className="section-card">
-        <h3>Map Filters</h3>
+        <h3><span className="section-icon"><IconFilter size={13} /></span>Map Filters</h3>
         <div className="filter-grid">
           <div className="form-row">
             <label>
@@ -166,7 +169,7 @@ export function AIAssistant({
 
       {/* Chat Section */}
       <div className="section-card">
-        <h3>Chat with AI</h3>
+        <h3><span className="section-icon"><IconMessageCircle size={13} /></span>Chat with AI</h3>
         <div className="chat-container">
           <div className="chat-box">
             <div className="chat-row assistant">{greeting}</div>
@@ -195,12 +198,8 @@ export function AIAssistant({
               setChatInput('');
             }}
           >
-            <input
-              placeholder="Ask for closer, cheaper, safer options…"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-            />
-            <button type="submit">Ask</button>
+            <input placeholder="Ask about closer, cheaper, safer options…" value={chatInput} onChange={(e) => setChatInput(e.target.value)} />
+            <button type="submit"><IconSend size={15} /></button>
           </form>
         </div>
 

@@ -146,17 +146,31 @@ p { margin: 0 0 0.75rem; }
 }
 
 .auth-hero {
-  padding: 3rem;
-  background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.5));
+  padding: 2.5rem 3rem;
+  background: var(--surface);
+  border-right: none;
+}
+
+.auth-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--brand);
+  background: var(--brand-light);
+  border: 1px solid var(--brand-border);
+  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  margin-bottom: 1rem;
 }
 
 .auth-hero h1 {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  background: linear-gradient(to right, var(--brand), #10b981);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  margin-bottom: 0.75rem;
+  color: var(--ink);
 }
 
 .auth-hero ul {
@@ -216,12 +230,73 @@ p { margin: 0 0 0.75rem; }
   color: var(--ink);
 }
 
-.auth-tabs button.active {
-  background: transparent;
-  color: var(--brand);
-  border-bottom-color: var(--brand);
-  font-weight: 600;
+/* Auth role card selector */
+.auth-role-cards {
+  display: flex;
+  gap: 0.6rem;
 }
+
+.auth-role-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.9rem 0.5rem;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-2);
+  transition: border-color 0.18s, background 0.18s, color 0.18s;
+}
+
+.auth-role-card:hover {
+  border-color: var(--brand);
+  background: var(--brand-light);
+  color: var(--brand);
+  transform: translateY(-1px);
+}
+
+.auth-role-card.active {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: white;
+  box-shadow: 0 2px 8px rgba(26,86,219,0.2);
+}
+
+/* Demo accounts box */
+.demo-box {
+  margin-top: 1.5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.demo-box-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+
+.demo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  font-size: 0.82rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.demo-row:last-child { border-bottom: none; }
+.demo-sep { color: var(--muted); }
+.demo-row code { color: var(--ink-2); background: none; font-size: 0.78rem; }
 
 /* Forms */
 label {
@@ -502,6 +577,27 @@ button:disabled {
   max-height: none;
   overflow: visible;
   padding-right: 0;
+  width: 100%;
+}
+
+.admin-dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 1rem;
+}
+
+.admin-card-hero {
+  grid-column: 1 / -1;
+}
+
+.admin-card-queue,
+.admin-card-leads {
+  grid-column: 1 / 2;
+}
+
+.admin-card-governance {
+  grid-column: 2 / 3;
+  grid-row: 2 / 4;
 }
 
 .left-sidebar, .detail-pane {
@@ -841,6 +937,10 @@ button:disabled {
     grid-template-columns: 320px 1fr;
   }
 
+  .admin-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
   .intent-grid {
     grid-template-columns: 1fr;
   }
@@ -851,6 +951,18 @@ button:disabled {
 
   .admin-governance-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-card-hero,
+  .admin-card-queue,
+  .admin-card-leads,
+  .admin-card-governance {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .detail-pane {
@@ -916,6 +1028,10 @@ button:disabled {
   }
 
   .admin-health-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-workspace-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1201,10 +1317,20 @@ button:disabled {
 }
 
 /* ─── Admin stats ─────────────────────────────────────────── */
+.admin-hero-card {
+  background: linear-gradient(140deg, #f8fafc 0%, #eef2ff 100%);
+}
+
 .admin-stats-row {
   display: flex;
   gap: 1rem;
   margin-top: 0.5rem;
+}
+
+.admin-health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
 }
 
 .admin-stat {
@@ -1224,6 +1350,48 @@ button:disabled {
   font-weight: 700;
   color: var(--brand-strong);
   line-height: 1;
+}
+
+.admin-governance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.governance-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.governance-label {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.admin-privileges h4 {
+  margin: 0;
+}
+
+.admin-privileges ul {
+  margin: 0.55rem 0 0;
+  padding-left: 1.1rem;
+  color: #334155;
+}
+
+.admin-privileges li {
+  margin-bottom: 0.35rem;
+}
+
+.queue-meta {
+  font-size: 0.86rem;
 }
 
 .lead-arrow { color: var(--muted); margin: 0 0.3rem; }
@@ -1826,3 +1994,105 @@ button:disabled {
     height: 92vh;
   }
 }
+
+/* ─── Onboarding icon badge (replaces emoji) ─────────────────── */
+.ob-icon-badge {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-lg);
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 0.25rem;
+}
+
+.ob-done-badge {
+  background: var(--success-light);
+  border-color: #86efac;
+  color: var(--success);
+}
+
+/* ─── Section header icon ────────────────────────────────────── */
+.section-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+  color: var(--muted);
+}
+
+h3 .section-icon { margin-bottom: 1px; }
+
+/* ─── Status dot ─────────────────────────────────────────────── */
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ─── Eyebrow label ──────────────────────────────────────────── */
+.eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* ─── Auth hero copy ─────────────────────────────────────────── */
+.hero-copy {
+  font-size: 0.95rem;
+  color: var(--ink-2);
+  line-height: 1.6;
+  margin-bottom: 0;
+}
+
+/* ─── Auth card active tab fix ───────────────────────────────── */
+.auth-tabs button.active {
+  color: var(--brand);
+  border-bottom-color: var(--brand);
+  font-weight: 600;
+}
+
+/* ─── Actions row (used in delete confirm) ───────────────────── */
+.actions-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ─── Stack card hover ───────────────────────────────────────── */
+.stack-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  background: var(--surface-2);
+  transition: border-color 0.18s, background 0.18s;
+}
+
+.stack-card:hover {
+  border-color: var(--brand-border);
+  background: var(--brand-light);
+}
+
+/* ─── Intent metric hover ────────────────────────────────────── */
+.intent-metric {
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.intent-metric:hover {
+  border-color: var(--brand-border);
+  box-shadow: var(--shadow-xs);
+}
+

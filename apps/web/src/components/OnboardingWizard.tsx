@@ -6,6 +6,10 @@ import {
   LifestyleTag, TransportMode, SecurityPriority,
   makeEmptyStudentProfile, makeEmptyLandlordProfile, makeEmptyAdminProfile,
 } from '../types';
+import {
+  IconGraduationCap, IconHome, IconUser, IconBriefcase, IconPhone,
+  IconShield, IconCheck, IconArrowRight, IconChevronLeft,
+} from './Icons';
 
 const amenityOptions = ['wifi', 'security', 'laundry', 'parking', 'backup-power'];
 const lifestyleTags: LifestyleTag[] = ['quiet', 'social', 'night-owl', 'early-riser', 'pet-friendly', 'study-focused'];
@@ -126,9 +130,9 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
           <motion.div key={studentStep} variants={pageVariants} initial="enter" animate="center" exit="exit">
             {studentStep === 'welcome' && (
               <div className="ob-step">
-                <div className="ob-icon">🎓</div>
-                <h3>Welcome, {authUser.name}!</h3>
-                <p className="muted">Let's set up your student profile so the AI can find the perfect accommodation for you. This takes about 2 minutes.</p>
+                <div className="ob-icon-badge"><IconGraduationCap size={28} /></div>
+                <h3>Welcome, {authUser.name}</h3>
+                <p className="muted">Set up your profile in 2 minutes so the AI can find the perfect accommodation for you.</p>
                 <AvatarSection />
                 <label>
                   A bit about you (optional)
@@ -144,7 +148,7 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
 
             {studentStep === 'university' && (
               <div className="ob-step">
-                <div className="ob-icon">🏛️</div>
+                <div className="ob-icon-badge"><IconHome size={28} /></div>
                 <h3>Your Studies</h3>
                 <p className="muted">This helps the AI centre the map around your campus and filter by proximity.</p>
                 <div className="profile-fields">
@@ -187,8 +191,8 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
 
             {studentStep === 'budget' && (
               <div className="ob-step">
-                <div className="ob-icon">💰</div>
-                <h3>Budget & Room Type</h3>
+                <div className="ob-icon-badge"><IconBriefcase size={28} /></div>
+                <h3>Budget & Room</h3>
                 <p className="muted">Set your monthly rental range so the AI only recommends what you can afford.</p>
                 <div className="profile-fields">
                   <div className="form-row">
@@ -267,7 +271,7 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
 
             {studentStep === 'lifestyle' && (
               <div className="ob-step">
-                <div className="ob-icon">✨</div>
+                <div className="ob-icon-badge"><IconUser size={28} /></div>
                 <h3>Lifestyle & Preferences</h3>
                 <p className="muted">The more context you give the AI, the better it can match you.</p>
                 <div className="profile-fields">
@@ -329,8 +333,8 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
 
             {studentStep === 'done' && (
               <div className="ob-step ob-done">
-                <div className="ob-icon">🎉</div>
-                <h3>You're all set!</h3>
+                <div className="ob-icon-badge ob-done-badge"><IconCheck size={28} /></div>
+                <h3>You're all set</h3>
                 <p className="muted">Your profile is saved. The AI will now use your preferences to find the best listings on the map.</p>
                 <div className="ob-summary">
                   <div className="ob-summary-row"><span>Uni</span><strong>{studentProfile.university || '—'}</strong></div>
@@ -362,9 +366,9 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
         <AnimatePresence mode="wait">
           <motion.div key={landlordStep} variants={pageVariants} initial="enter" animate="center" exit="exit">
             {landlordStep === 'welcome' && (
-              <div className="ob-step">
-                <div className="ob-icon">🏠</div>
-                <h3>Welcome, {authUser.name}!</h3>
+            <div className="ob-step">
+              <div className="ob-icon-badge"><IconHome size={28} /></div>
+              <h3>Welcome, {authUser.name}</h3>
                 <p className="muted">Set up your landlord profile to attract the right students and build trust.</p>
                 <AvatarSection />
                 <label>
@@ -380,9 +384,9 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
             )}
 
             {landlordStep === 'business' && (
-              <div className="ob-step">
-                <div className="ob-icon">🏢</div>
-                <h3>Business Details</h3>
+            <div className="ob-step">
+              <div className="ob-icon-badge"><IconBriefcase size={28} /></div>
+              <h3>Business Details</h3>
                 <div className="profile-fields">
                   <label>
                     Business / Trading Name
@@ -422,9 +426,9 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
             )}
 
             {landlordStep === 'contact' && (
-              <div className="ob-step">
-                <div className="ob-icon">📞</div>
-                <h3>Contact Details</h3>
+            <div className="ob-step">
+              <div className="ob-icon-badge"><IconPhone size={28} /></div>
+              <h3>Contact Details</h3>
                 <div className="profile-fields">
                   <label>
                     WhatsApp Number
@@ -443,9 +447,9 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
             )}
 
             {landlordStep === 'done' && (
-              <div className="ob-step ob-done">
-                <div className="ob-icon">✅</div>
-                <h3>Profile ready!</h3>
+            <div className="ob-step ob-done">
+              <div className="ob-icon-badge ob-done-badge"><IconCheck size={28} /></div>
+              <h3>Profile ready</h3>
                 <p className="muted">Students can now see your landlord profile when viewing your listings.</p>
                 <button type="button" onClick={finishLandlord}>Enter Dashboard →</button>
               </div>
@@ -469,9 +473,9 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
       <AnimatePresence mode="wait">
         <motion.div key={adminStep} variants={pageVariants} initial="enter" animate="center" exit="exit">
           {adminStep === 'welcome' && (
-            <div className="ob-step">
-              <div className="ob-icon">🛡️</div>
-              <h3>Admin Setup</h3>
+          <div className="ob-step">
+            <div className="ob-icon-badge"><IconShield size={28} /></div>
+            <h3>Admin Setup</h3>
               <AvatarSection />
               <label>
                 About you
@@ -485,9 +489,9 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
             </div>
           )}
           {adminStep === 'department' && (
-            <div className="ob-step">
-              <div className="ob-icon">🏛️</div>
-              <h3>Your Department</h3>
+          <div className="ob-step">
+            <div className="ob-icon-badge"><IconBriefcase size={28} /></div>
+            <h3>Your Department</h3>
               <label>
                 Department / Team
                 <input
@@ -503,9 +507,9 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
             </div>
           )}
           {adminStep === 'done' && (
-            <div className="ob-step ob-done">
-              <div className="ob-icon">✅</div>
-              <h3>Ready to moderate!</h3>
+          <div className="ob-step ob-done">
+            <div className="ob-icon-badge ob-done-badge"><IconCheck size={28} /></div>
+            <h3>Ready to moderate</h3>
               <p className="muted">Your admin profile is set up.</p>
               <button type="button" onClick={finishAdmin}>Enter Admin Panel →</button>
             </div>
