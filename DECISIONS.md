@@ -7,3 +7,6 @@
 - Launch geography: Johannesburg/UJ first
 - MVP is strict zero-cost setup
 - Exclude student-landlord in-app chat from MVP
+- Use OpenStreetMap + Leaflet for zero-cost map rendering in MVP
+- Use SSE for lightweight live updates before full websocket upgrade
+- Use in-memory API data for rapid iteration, then migrate to Postgres/PostGIS

@@ -14,3 +14,13 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 3. AI Assistant: contextual clarifying questions + recommendations
 4. Moderation and Dashboards: landlord/admin workflows
 5. Launch Readiness: QA, seed data, operational checks
+
+## Current Focus
+- Validate all student, landlord, and admin journeys in live development mode.
+- Stabilize real-time refresh behavior under multi-action usage.
+- Prepare next increment: persistent database and authentication hardening.
+
+## Next Decisions (Auto-managed)
+- Keep local in-memory mode as development default for fast iteration.
+- Introduce Postgres/PostGIS in next milestone while preserving current API contracts.
+- Add role-based auth middleware before public pilot exposure.
