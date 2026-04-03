@@ -29,3 +29,7 @@ Map-first student accommodation platform with AI-assisted discovery, role-based 
 ## Notes
 
 This scaffold is local-first and zero-cost focused for MVP development.
+
+## Project Status
+
+All planning, task tracking, decision history, and update logs now live in [PROJECT_STATUS.md](PROJECT_STATUS.md).
