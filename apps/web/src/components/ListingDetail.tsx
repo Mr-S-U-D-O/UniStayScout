@@ -102,6 +102,7 @@ export function ListingDetail({
 
           <div className="detail-facts">
             <p><strong>Room:</strong> {listing.roomType}</p>
+            <p><strong>Location:</strong> {listing.locationLabel}</p>
             <p><strong>Amenities:</strong> {listing.amenities.join(', ')}</p>
             <p><strong>Landlord:</strong> {listing.landlordName}</p>
           </div>

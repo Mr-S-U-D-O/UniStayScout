@@ -23,16 +23,7 @@ import { motion } from 'framer-motion';
 
 const containerVariants = {
   hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } }
-};
-
-const childVariants = {
-  hidden: { opacity: 0, x: -20 },
-  visible: (i: number) => ({
-    opacity: 1,
-    x: 0,
-    transition: { delay: i * 0.1 + 0.2, duration: 0.4, ease: 'easeOut' }
-  })
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5 } }
 };
 
 export function AuthLayout({
@@ -63,7 +54,12 @@ export function AuthLayout({
             'Landlords: publish properties and track moderation status.',
             'Admins: approve listings and manage incoming leads.'
           ].map((item, i) => (
-            <motion.li key={i} custom={i} variants={childVariants} initial="hidden" animate="visible">
+            <motion.li
+              key={i}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.1 + 0.2, duration: 0.4 }}
+            >
               {item}
             </motion.li>
           ))}
@@ -90,7 +86,7 @@ export function AuthLayout({
         className="auth-card panel"
         initial={{ opacity: 0, x: 40 }}
         animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.5, delay: 0.15, ease: 'easeOut' }}
+        transition={{ duration: 0.5, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
       >
         <h2>{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
         <div className="auth-tabs">

@@ -24,6 +24,7 @@ type Props = {
     roomType: 'private' | 'shared';
     amenities: string[];
     photos: string[];
+    locationLabel: string;
   }) => Promise<void>;
   landlordListings: Listing[];
 };
@@ -37,6 +38,7 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [photoUrl, setPhotoUrl] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [locationLabel, setLocationLabel] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
@@ -56,7 +58,7 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      await createListing({ title, description, price, roomType, amenities: selectedAmenities, photos });
+      await createListing({ title, description, price, roomType, amenities: selectedAmenities, photos, locationLabel });
       // reset
       setStep('basics');
       setTitle('');
@@ -65,6 +67,7 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
       setRoomType('private');
       setSelectedAmenities([]);
       setPhotos([]);
+      setLocationLabel('');
     } finally {
       setIsSubmitting(false);
     }
@@ -115,6 +118,7 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
             {step === 'basics' && (
               <div className="profile-fields">
                 <label>Listing Title<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Sunny studio near UJ" /></label>
+                <label>Property Location<input value={locationLabel} onChange={(e) => setLocationLabel(e.target.value)} placeholder="e.g. 12 De Beer Street, Braamfontein" /></label>
                 <label>Description<textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the space, environment, nearby transport…" /></label>
                 <button type="button" onClick={() => setStep('pricing')} disabled={!title}>Next →</button>
               </div>
@@ -201,6 +205,7 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
               <div className="profile-fields">
                 <div className="review-summary">
                   <div className="review-row"><span>Title</span><strong>{title || '—'}</strong></div>
+                  <div className="review-row"><span>Location</span><strong>{locationLabel || '—'}</strong></div>
                   <div className="review-row"><span>Price</span><strong>R{price}/month</strong></div>
                   <div className="review-row"><span>Room</span><strong>{roomType}</strong></div>
                   <div className="review-row"><span>Amenities</span><strong>{selectedAmenities.join(', ') || 'None'}</strong></div>

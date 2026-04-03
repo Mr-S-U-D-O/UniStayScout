@@ -9,6 +9,8 @@ export type School = {
   city: string;
   latitude: number;
   longitude: number;
+  source?: 'seed' | 'osm';
+  address?: string;
 };
 
 export type Listing = {
@@ -18,6 +20,7 @@ export type Listing = {
   title: string;
   description: string;
   schoolId: string;
+  locationLabel: string;
   latitude: number;
   longitude: number;
   price: number;

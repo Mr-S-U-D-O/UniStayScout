@@ -122,6 +122,7 @@ export function MapWorkspace({
           >
             <Popup>
               <strong>{item.title}</strong><br />
+              {item.locationLabel}<br />
               R{item.price} {item.currency} — {item.distanceKm?.toFixed(1)}km
             </Popup>
           </Marker>

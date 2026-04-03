@@ -16,6 +16,8 @@ type School = {
   city: string;
   latitude: number;
   longitude: number;
+  source?: 'seed' | 'osm';
+  address?: string;
 };
 
 type ListingStatus = 'pending' | 'approved' | 'rejected';
@@ -27,6 +29,7 @@ type Listing = {
   title: string;
   description: string;
   schoolId: string;
+  locationLabel: string;
   latitude: number;
   longitude: number;
   price: number;
@@ -107,22 +110,26 @@ type AccountRow = {
   created_at: string;
 };
 
-const schools: School[] = [
+const seedSchools: School[] = [
   {
     id: 'uj-auckland-park',
     name: 'University of Johannesburg - Auckland Park',
     city: 'Johannesburg',
     latitude: -26.1829,
-    longitude: 27.9994
+    longitude: 27.9994,
+    source: 'seed'
   },
   {
     id: 'wits-braamfontein',
     name: 'University of the Witwatersrand - Braamfontein',
     city: 'Johannesburg',
     latitude: -26.1929,
-    longitude: 28.0305
+    longitude: 28.0305,
+    source: 'seed'
   }
 ];
+
+let schools: School[] = [...seedSchools];
 
 const listings: Listing[] = [
   {
@@ -132,6 +139,7 @@ const listings: Listing[] = [
     title: 'Melville Student Loft',
     description: 'Private room with study desk, fast wifi, and secure access.',
     schoolId: 'uj-auckland-park',
+    locationLabel: 'Melville, Johannesburg',
     latitude: -26.1807,
     longitude: 28.0008,
     price: 4200,
@@ -154,6 +162,7 @@ const listings: Listing[] = [
     title: 'Auckland Shared House',
     description: 'Shared accommodation with spacious kitchen and backup power.',
     schoolId: 'uj-auckland-park',
+    locationLabel: 'Auckland Park, Johannesburg',
     latitude: -26.186,
     longitude: 27.995,
     price: 3100,
@@ -176,6 +185,7 @@ const listings: Listing[] = [
     title: 'Braamfontein Studio Pods',
     description: 'Compact private pods with quiet floors and controlled access.',
     schoolId: 'wits-braamfontein',
+    locationLabel: 'Braamfontein, Johannesburg',
     latitude: -26.1937,
     longitude: 28.0279,
     price: 5300,
@@ -198,6 +208,7 @@ const listings: Listing[] = [
     title: 'Auckland Women-Only Shared Flat',
     description: 'Secure shared flat with biometric access and walkable campus route.',
     schoolId: 'uj-auckland-park',
+    locationLabel: 'Auckland Park, Johannesburg',
     latitude: -26.1844,
     longitude: 28.0036,
     price: 3600,
@@ -220,6 +231,7 @@ const listings: Listing[] = [
     title: 'Wits Shared Loft Block',
     description: 'Shared lofts with study lounge and 24/7 concierge.',
     schoolId: 'wits-braamfontein',
+    locationLabel: 'Braamfontein, Johannesburg',
     latitude: -26.1912,
     longitude: 28.0338,
     price: 4100,
@@ -242,6 +254,7 @@ const listings: Listing[] = [
     title: 'Melville Premium Private Room',
     description: 'Premium private room with ensuite, fast wifi, and cleaning service.',
     schoolId: 'uj-auckland-park',
+    locationLabel: 'Melville, Johannesburg',
     latitude: -26.1789,
     longitude: 28.0047,
     price: 6200,
@@ -297,6 +310,7 @@ let accounts: Account[] = [...seedAccounts];
 
 const sseClients = new Set<Response>();
 const authRateBuckets = new Map<string, AuthRateBucket>();
+let schoolDirectoryRefreshPromise: Promise<void> | null = null;
 const tokenSecret = process.env.AUTH_TOKEN_SECRET || 'unistayscout-dev-secret';
 const tokenTtlSeconds = 60 * 60 * 12;
 const databaseUrl = process.env.DATABASE_URL;
@@ -409,6 +423,213 @@ function distanceKm(aLat: number, aLng: number, bLat: number, bLng: number): num
     Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
 
   return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
+}
+
+type OSMElement = {
+  id: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
+  tags?: Record<string, string>;
+};
+
+type GeocodeResult = {
+  label: string;
+  latitude: number;
+  longitude: number;
+  city: string;
+};
+
+const osmUserAgent = 'UniStayScout/1.0 (local development)';
+const johannesburgCenter = { lat: -26.2041, lon: 28.0473 };
+
+function dedupeSchools(entries: School[]): School[] {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = `${entry.id}:${entry.latitude}:${entry.longitude}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function toSchoolFromOsmElement(element: OSMElement): School | null {
+  const latitude = element.lat ?? element.center?.lat;
+  const longitude = element.lon ?? element.center?.lon;
+  const name = element.tags?.name || element.tags?.['name:en'];
+
+  if (!name || latitude == null || longitude == null) {
+    return null;
+  }
+
+  const addressParts = [element.tags?.['addr:housenumber'], element.tags?.['addr:street']].filter(Boolean);
+  const address = addressParts.join(' ').trim();
+
+  return {
+    id: `osm-school-${element.id}`,
+    name,
+    city: element.tags?.['addr:city'] || 'Johannesburg',
+    latitude,
+    longitude,
+    source: 'osm',
+    address: address || undefined
+  };
+}
+
+async function fetchOsmSchools(): Promise<School[]> {
+  const query = `
+    [out:json][timeout:25];
+    (
+      node["amenity"~"school|university|college"](around:25000,${johannesburgCenter.lat},${johannesburgCenter.lon});
+      way["amenity"~"school|university|college"](around:25000,${johannesburgCenter.lat},${johannesburgCenter.lon});
+      relation["amenity"~"school|university|college"](around:25000,${johannesburgCenter.lat},${johannesburgCenter.lon});
+    );
+    out center tags;
+  `;
+
+  const response = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      Accept: 'application/json',
+      'User-Agent': osmUserAgent
+    },
+    body: `data=${encodeURIComponent(query)}`
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const payload = (await response.json()) as { elements?: OSMElement[] };
+  return (payload.elements || [])
+    .map(toSchoolFromOsmElement)
+    .filter((school): school is School => Boolean(school));
+}
+
+async function refreshSchoolDirectory(): Promise<void> {
+  try {
+    const liveSchools = await fetchOsmSchools();
+    if (liveSchools.length > 0) {
+      schools = dedupeSchools([...seedSchools, ...liveSchools]).sort((left, right) => left.name.localeCompare(right.name));
+    }
+  } catch {
+    schools = [...seedSchools];
+  }
+}
+
+function ensureSchoolDirectoryRefresh(): Promise<void> {
+  if (!schoolDirectoryRefreshPromise) {
+    schoolDirectoryRefreshPromise = refreshSchoolDirectory();
+  }
+  return schoolDirectoryRefreshPromise;
+}
+
+async function searchSchools(query: string): Promise<School[]> {
+  const normalized = query.trim();
+  if (!normalized) {
+    await ensureSchoolDirectoryRefresh();
+    return schools;
+  }
+
+  const localMatches = schools.filter((school) => school.name.toLowerCase().includes(normalized.toLowerCase()));
+  if (localMatches.length >= 5) {
+    return dedupeSchools(localMatches).slice(0, 10);
+  }
+
+  try {
+    const params = new URLSearchParams({
+      format: 'jsonv2',
+      q: normalized,
+      limit: '10',
+      countrycodes: 'za',
+      addressdetails: '1'
+    });
+
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': osmUserAgent
+      }
+    });
+
+    if (!response.ok) {
+      return dedupeSchools(localMatches).slice(0, 10);
+    }
+
+    const payload = (await response.json()) as Array<{
+      place_id: number;
+      display_name: string;
+      lat: string;
+      lon: string;
+      class?: string;
+      type?: string;
+      address?: Record<string, string>;
+    }>;
+
+    const liveSchools = payload
+      .filter((entry) => entry.class === 'amenity' || entry.type === 'school' || entry.type === 'university' || entry.type === 'college')
+      .map((entry) => ({
+        id: `osm-search-${entry.place_id}`,
+        name: entry.display_name.split(',')[0] || entry.display_name,
+        city: entry.address?.city || entry.address?.town || entry.address?.suburb || 'Johannesburg',
+        latitude: Number(entry.lat),
+        longitude: Number(entry.lon),
+        source: 'osm' as const,
+        address: entry.display_name
+      }));
+
+    return dedupeSchools([...localMatches, ...liveSchools]).slice(0, 10);
+  } catch {
+    return dedupeSchools(localMatches).slice(0, 10);
+  }
+}
+
+async function geocodeLocation(query: string): Promise<GeocodeResult | null> {
+  const normalized = query.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    q: normalized,
+    limit: '1',
+    addressdetails: '1',
+    countrycodes: 'za'
+  });
+
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': osmUserAgent
+    }
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as Array<{
+    display_name: string;
+    lat: string;
+    lon: string;
+    address?: Record<string, string>;
+  }>;
+
+  const match = payload[0];
+  if (!match) {
+    return null;
+  }
+
+  return {
+    label: match.display_name,
+    latitude: Number(match.lat),
+    longitude: Number(match.lon),
+    city: match.address?.city || match.address?.town || match.address?.suburb || 'Johannesburg'
+  };
 }
 
 function notify(event: string, payload: unknown): void {
@@ -584,8 +805,33 @@ app.get('/api/events', (req, res) => {
   });
 });
 
-app.get('/api/schools', (_req, res) => {
+app.get('/api/schools', async (req, res) => {
+  const query = String(req.query.q || '').trim();
+
+  if (query) {
+    const data = await searchSchools(query);
+    res.json({ data });
+    return;
+  }
+
+  await ensureSchoolDirectoryRefresh().catch(() => undefined);
   res.json({ data: schools });
+});
+
+app.get('/api/geo/search', async (req, res) => {
+  const query = String(req.query.query || '').trim();
+  if (!query) {
+    res.status(400).json({ message: 'query is required.' });
+    return;
+  }
+
+  const result = await geocodeLocation(query);
+  if (!result) {
+    res.status(404).json({ message: 'No geocoding match found.' });
+    return;
+  }
+
+  res.json({ data: result });
 });
 
 app.get('/api/auth/demo-accounts', (_req, res) => {
@@ -801,7 +1047,7 @@ app.get('/api/listings', (req, res) => {
   res.json({ data: mapped, total: mapped.length, school });
 });
 
-app.post('/api/listings', (req, res) => {
+app.post('/api/listings', async (req, res) => {
   const auth = requireAuth(req, res);
   if (!auth) {
     return;
@@ -821,6 +1067,20 @@ app.post('/api/listings', (req, res) => {
     return;
   }
 
+  const school = schools.find((item) => item.id === payload.schoolId) || schools[0];
+  if (!school) {
+    res.status(400).json({ message: 'schoolId is invalid.' });
+    return;
+  }
+
+  const locationLabel = typeof payload.locationLabel === 'string' ? payload.locationLabel.trim() : '';
+  const geocodedLocation = locationLabel ? await geocodeLocation(locationLabel) : null;
+
+  if (locationLabel && !geocodedLocation) {
+    res.status(400).json({ message: 'Unable to geocode the provided location. Use a real address or place name.' });
+    return;
+  }
+
   const now = new Date().toISOString();
   const listing: Listing = {
     id: nextId('lst'),
@@ -829,8 +1089,9 @@ app.post('/api/listings', (req, res) => {
     title: payload.title,
     description: payload.description || 'Description pending update.',
     schoolId: payload.schoolId,
-    latitude: Number(payload.latitude || schools[0].latitude),
-    longitude: Number(payload.longitude || schools[0].longitude),
+    locationLabel: geocodedLocation?.label || locationLabel || school.name,
+    latitude: geocodedLocation?.latitude ?? Number(payload.latitude || school.latitude),
+    longitude: geocodedLocation?.longitude ?? Number(payload.longitude || school.longitude),
     price: Number(payload.price),
     currency: payload.currency || 'ZAR',
     roomType: payload.roomType === 'shared' ? 'shared' : 'private',
@@ -1069,6 +1330,7 @@ app.post('/api/ai/recommendations', (req, res) => {
 async function startServer(): Promise<void> {
   try {
     await initializeAccountStore();
+    void ensureSchoolDirectoryRefresh();
     app.listen(port, () => {
       console.log(`API listening on http://localhost:${port}`);
       console.log(`Account store mode: ${dbPool ? 'postgres' : 'in-memory'}`);

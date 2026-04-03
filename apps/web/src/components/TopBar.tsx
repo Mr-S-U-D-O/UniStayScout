@@ -7,6 +7,10 @@ type Props = {
   schools: School[];
   selectedSchoolId: string;
   setSelectedSchoolId: (id: string) => void;
+  schoolSearch: string;
+  setSchoolSearch: (value: string) => void;
+  schoolSearchLoading: boolean;
+  loadSchools: (query?: string) => Promise<void>;
   radiusKm: number;
   setRadiusKm: (km: number) => void;
   sortBy: 'distance' | 'price-asc' | 'price-desc';
@@ -23,6 +27,10 @@ export function TopBar({
   schools,
   selectedSchoolId,
   setSelectedSchoolId,
+  schoolSearch,
+  setSchoolSearch,
+  schoolSearchLoading,
+  loadSchools,
   radiusKm,
   setRadiusKm,
   sortBy,
@@ -50,6 +58,25 @@ export function TopBar({
           </div>
         </div>
         <div className="topbar-controls">
+          <form
+            className="school-search-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              loadSchools(schoolSearch).catch(() => undefined);
+            }}
+          >
+            <label>
+              Find school
+              <input
+                value={schoolSearch}
+                onChange={(e) => setSchoolSearch(e.target.value)}
+                placeholder="Search real schools or campuses"
+              />
+            </label>
+            <button type="submit" className="tool-btn" disabled={schoolSearchLoading}>
+              {schoolSearchLoading ? 'Searching...' : 'Search'}
+            </button>
+          </form>
           <label>
             School
             <select className="tool-btn" value={selectedSchoolId} onChange={(e) => setSelectedSchoolId(e.target.value)}>
