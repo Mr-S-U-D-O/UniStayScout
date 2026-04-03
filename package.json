@@ -10,6 +10,7 @@
     "dev:web": "npm run dev -w @unistayscout/web",
     "dev:api": "npm run dev -w @unistayscout/api",
     "provision:api": "npm run provision -w @unistayscout/api --",
+    "setup:admin": "npm run admin:setup -w @unistayscout/api --",
     "build": "npm run build -w @unistayscout/shared && npm run build -w @unistayscout/api && npm run build -w @unistayscout/web",
     "check": "npm run check -w @unistayscout/shared && npm run check -w @unistayscout/api && npm run check -w @unistayscout/web"
   },

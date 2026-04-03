@@ -217,7 +217,12 @@ function App() {
       setAuthForm((c) => ({ ...c, password: '' }));
       await loadUserProfile(r.token || '', r.data);
     } catch (e) {
-      setAuthError(e instanceof Error ? e.message : 'Login failed.');
+      const message = e instanceof Error ? e.message : '';
+      if (/invalid credentials/i.test(message)) {
+        setAuthError('Incorrect email or password.');
+      } else {
+        setAuthError(message || 'Unable to sign in right now. Please try again.');
+      }
     } finally { setAuthLoading(false); }
   }
 
@@ -237,7 +242,8 @@ function App() {
       // Always show onboarding for new registrations
       setShowOnboarding(true);
     } catch (e) {
-      setAuthError(e instanceof Error ? e.message : 'Registration failed.');
+      const message = e instanceof Error ? e.message : '';
+      setAuthError(message || 'Unable to create your account right now. Please try again.');
     } finally { setAuthLoading(false); }
   }
 

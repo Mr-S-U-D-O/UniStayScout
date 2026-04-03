@@ -45,6 +45,18 @@ For secure first-admin bootstrap (only when no admin exists), configure these AP
 
 If these are missing and no admin exists, the API will log a warning and skip bootstrap.
 
+## Production Admin Setup
+
+For a direct create/promote flow against Postgres, run:
+
+- `npm run setup:admin -- --email="you@domain.com" --name="Your Name" --phone="+27..." --password="StrongPass!123" --superuser`
+
+Notes:
+- If the email exists, the account is promoted to admin and updated.
+- If the email does not exist, a new admin is created.
+- Admin passwords must be at least 12 chars and include uppercase, lowercase, number, and special character.
+- In production, `AUTH_TOKEN_SECRET` must be explicitly set to a strong value (minimum 32 characters).
+
 ## Project Status
 
 All planning, task tracking, decision history, and update logs now live in [PROJECT_STATUS.md](PROJECT_STATUS.md).

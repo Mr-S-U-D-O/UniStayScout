@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "check": "tsc -p tsconfig.json --noEmit",
     "provision": "tsx src/provision.ts",
+    "admin:setup": "tsx src/provision.ts --setup-admin",
     "db:up": "docker compose -f ../../docker-compose.yml up -d db",
     "db:down": "docker compose -f ../../docker-compose.yml down"
   },
@@ -16,6 +17,7 @@
     "@google/genai": "^1.48.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.0",
     "express": "^4.21.1",
     "multer": "^2.1.1",
     "pg": "^8.20.0"

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { hash } from 'bcryptjs';
 import { readFile } from 'fs/promises';
 import { resolve } from 'path';
@@ -99,9 +100,33 @@ async function loadProvisionFile(inputPath: string): Promise<ProvisionFile> {
   return JSON.parse(raw) as ProvisionFile;
 }
 
-function parseArgs(argv: string[]): { filePath: string; reset: boolean } {
+type AdminSetupArgs = {
+  enabled: boolean;
+  email: string;
+  name: string;
+  phone: string;
+  password: string;
+  superUser: boolean;
+};
+
+function validateAdminPassword(password: string): string | null {
+  if (password.length < 12) return 'Password must be at least 12 characters.';
+  if (!/[A-Z]/.test(password)) return 'Password must include at least one uppercase letter.';
+  if (!/[a-z]/.test(password)) return 'Password must include at least one lowercase letter.';
+  if (!/[0-9]/.test(password)) return 'Password must include at least one number.';
+  if (!/[^A-Za-z0-9]/.test(password)) return 'Password must include at least one special character.';
+  return null;
+}
+
+function parseArgs(argv: string[]): { filePath: string; reset: boolean; adminSetup: AdminSetupArgs } {
   let filePath = process.env.PROVISION_FILE || defaultProvisionPath;
   let reset = false;
+  let setupAdmin = false;
+  let email = '';
+  let name = '';
+  let phone = '';
+  let password = '';
+  let superUser = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
@@ -117,9 +142,144 @@ function parseArgs(argv: string[]): { filePath: string; reset: boolean } {
     if (value === '--reset') {
       reset = true;
     }
+    if (value === '--setup-admin') {
+      setupAdmin = true;
+      continue;
+    }
+    if (value === '--superuser') {
+      superUser = true;
+      continue;
+    }
+    if (value === '--email') {
+      email = String(argv[index + 1] || '').trim().toLowerCase();
+      index += 1;
+      continue;
+    }
+    if (value.startsWith('--email=')) {
+      email = value.slice('--email='.length).trim().toLowerCase();
+      continue;
+    }
+    if (value === '--name') {
+      name = String(argv[index + 1] || '').trim();
+      index += 1;
+      continue;
+    }
+    if (value.startsWith('--name=')) {
+      name = value.slice('--name='.length).trim();
+      continue;
+    }
+    if (value === '--phone') {
+      phone = String(argv[index + 1] || '').trim();
+      index += 1;
+      continue;
+    }
+    if (value.startsWith('--phone=')) {
+      phone = value.slice('--phone='.length).trim();
+      continue;
+    }
+    if (value === '--password') {
+      password = String(argv[index + 1] || '');
+      index += 1;
+      continue;
+    }
+    if (value.startsWith('--password=')) {
+      password = value.slice('--password='.length);
+      continue;
+    }
   }
 
-  return { filePath, reset };
+  return {
+    filePath,
+    reset,
+    adminSetup: {
+      enabled: setupAdmin,
+      email,
+      name,
+      phone,
+      password,
+      superUser
+    }
+  };
+}
+
+async function setupAdminAccount(pool: Pool, setup: AdminSetupArgs): Promise<void> {
+  if (!setup.email) {
+    throw new Error('Admin setup requires --email.');
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(setup.email)) {
+    throw new Error('Admin setup requires a valid email.');
+  }
+
+  const existing = await pool.query<{
+    id: string;
+    name: string;
+    phone: string;
+    password_hash: string;
+    is_super_user: boolean;
+  }>(
+    `SELECT id, name, phone, password_hash, is_super_user FROM accounts WHERE email = $1 LIMIT 1;`,
+    [setup.email]
+  );
+
+  if (existing.rows.length > 0) {
+    const current = existing.rows[0];
+    const nextName = setup.name || current.name;
+    const nextPhone = setup.phone || current.phone;
+    let nextHash = current.password_hash;
+
+    if (setup.password) {
+      const validationError = validateAdminPassword(setup.password);
+      if (validationError) {
+        throw new Error(validationError);
+      }
+      nextHash = await hash(setup.password, 10);
+    }
+
+    await pool.query(
+      `
+        UPDATE accounts
+        SET name = $2,
+            phone = $3,
+            password_hash = $4,
+            role = 'admin',
+            landlord_id = NULL,
+            is_super_user = $5
+        WHERE email = $1;
+      `,
+      [setup.email, nextName, nextPhone, nextHash, setup.superUser || current.is_super_user]
+    );
+
+    console.log(`Admin account updated for ${setup.email}`);
+    return;
+  }
+
+  if (!setup.name || !setup.phone || !setup.password) {
+    throw new Error('Creating a new admin requires --name, --phone, and --password.');
+  }
+
+  const validationError = validateAdminPassword(setup.password);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  await pool.query(
+    `
+      INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at)
+      VALUES ($1, $2, $3, $4, $5, 'admin', NULL, $6, NOW());
+    `,
+    [
+      nextId('usr'),
+      setup.name,
+      setup.email,
+      setup.phone,
+      await hash(setup.password, 10),
+      setup.superUser
+    ]
+  );
+
+  console.log(`Admin account created for ${setup.email}`);
 }
 
 async function ensureSchema(pool: Pool): Promise<void> {
@@ -324,7 +484,7 @@ async function importReviews(pool: Pool, reviews: ProvisionReview[] = []): Promi
 }
 
 async function main(): Promise<void> {
-  const { filePath, reset } = parseArgs(process.argv.slice(2));
+  const { filePath, reset, adminSetup } = parseArgs(process.argv.slice(2));
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) {
@@ -332,10 +492,16 @@ async function main(): Promise<void> {
   }
 
   const pool = new Pool({ connectionString: databaseUrl });
-  const provisionFile = await loadProvisionFile(filePath);
 
   try {
     await ensureSchema(pool);
+
+    if (adminSetup.enabled) {
+      await setupAdminAccount(pool, adminSetup);
+      return;
+    }
+
+    const provisionFile = await loadProvisionFile(filePath);
 
     if (reset) {
       await pool.query('TRUNCATE TABLE reviews, interests, user_profiles, listings, accounts RESTART IDENTITY CASCADE;');

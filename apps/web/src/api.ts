@@ -5,76 +5,108 @@ export const AUTH_STORAGE_KEY = 'unistayscout-auth-user';
 export const AUTH_SESSION_KEY = 'unistayscout-auth-session';
 export const PROFILE_STORAGE_KEY = 'unistayscout-profile';
 
+const NETWORK_ERROR_MESSAGE = 'Unable to connect right now. Please try again in a moment.';
+
+function normalizeServerMessage(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  try {
+    const parsed = JSON.parse(trimmed) as { message?: string };
+    if (parsed?.message) return parsed.message;
+  } catch {
+    // Keep original content when this is not JSON.
+  }
+
+  return trimmed;
+}
+
+function toFriendlyMessage(message: string, fallback: string): string {
+  const cleaned = message.trim();
+  if (!cleaned) return fallback;
+
+  if (/failed to fetch|networkerror|network request failed|load failed|fetch failed/i.test(cleaned)) {
+    return NETWORK_ERROR_MESSAGE;
+  }
+
+  if (/request failed:/i.test(cleaned)) {
+    return fallback;
+  }
+
+  return cleaned;
+}
+
+async function requestWithHandling(path: string, init: RequestInit, fallback: string): Promise<Response> {
+  try {
+    const response = await fetch(`${API_BASE}${path}`, init);
+    if (!response.ok) {
+      const raw = await response.text();
+      const message = toFriendlyMessage(normalizeServerMessage(raw), fallback);
+      throw new Error(message);
+    }
+    return response;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(toFriendlyMessage(error.message, fallback));
+    }
+    throw new Error(fallback);
+  }
+}
+
 export async function apiGet<T>(path: string, token?: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await requestWithHandling(path, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (!response.ok) throw new Error(`Request failed: ${path}`);
+  }, 'Unable to load data right now. Please try again.');
   return response.json() as Promise<T>;
 }
 
 export async function apiPost<T>(path: string, body: unknown, token?: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await requestWithHandling(path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed: ${path}`);
-  }
+  }, 'Unable to complete this action right now. Please try again.');
   return response.json() as Promise<T>;
 }
 
 export async function apiUpload<T>(path: string, file: File, token?: string): Promise<T> {
   const formData = new FormData();
   formData.append('file', file);
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await requestWithHandling(path, {
     method: 'POST',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: formData,
-  });
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Upload failed: ${path}`);
-  }
+  }, 'Upload failed. Please try again.');
   return response.json() as Promise<T>;
 }
 
 export async function apiPut<T>(path: string, body: unknown, token?: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await requestWithHandling(path, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed: ${path}`);
-  }
+  }, 'Unable to save changes right now. Please try again.');
   return response.json() as Promise<T>;
 }
 
 export async function apiDelete<T>(path: string, body?: unknown, token?: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await requestWithHandling(path, {
     method: 'DELETE',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed: ${path}`);
-  }
+  }, 'Unable to complete this request right now. Please try again.');
   return response.json() as Promise<T>;
 }
 

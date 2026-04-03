@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
 import type { Response } from 'express';
@@ -106,6 +107,12 @@ type Account = {
 type AuthRateBucket = {
   count: number;
   resetAt: number;
+};
+
+type AuthFailureBucket = {
+  count: number;
+  firstFailureAt: number;
+  lockedUntil: number;
 };
 
 type AuthContext = {
@@ -236,16 +243,111 @@ function readBootstrapAdminConfig(): BootstrapAdminConfig | null {
     return null;
   }
 
+  const adminPasswordError = validateAdminPassword(password);
+  if (adminPasswordError) {
+    console.warn(`Bootstrap admin disabled: ${adminPasswordError}`);
+    return null;
+  }
+
   return { id, name, email, phone, password };
+}
+
+function validateAdminPassword(password: string): string | null {
+  if (password.length < 12) {
+    return 'Admin password must be at least 12 characters.';
+  }
+  if (!/[A-Z]/.test(password)) {
+    return 'Admin password must include at least one uppercase letter.';
+  }
+  if (!/[a-z]/.test(password)) {
+    return 'Admin password must include at least one lowercase letter.';
+  }
+  if (!/[0-9]/.test(password)) {
+    return 'Admin password must include at least one number.';
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return 'Admin password must include at least one special character.';
+  }
+  return null;
+}
+
+function readAuthFailureBucketKey(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function getAuthLockoutStatus(email: string): { locked: boolean; retryAfterSeconds: number } {
+  const now = Date.now();
+  const key = readAuthFailureBucketKey(email);
+  const bucket = authFailureBuckets.get(key);
+  if (!bucket) {
+    return { locked: false, retryAfterSeconds: 0 };
+  }
+  if (bucket.lockedUntil <= now) {
+    authFailureBuckets.delete(key);
+    return { locked: false, retryAfterSeconds: 0 };
+  }
+  return {
+    locked: true,
+    retryAfterSeconds: Math.max(1, Math.ceil((bucket.lockedUntil - now) / 1000))
+  };
+}
+
+function registerAuthFailure(email: string): { isLocked: boolean; retryAfterSeconds: number } {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const lockoutMs = 15 * 60 * 1000;
+  const maxFailures = 6;
+  const key = readAuthFailureBucketKey(email);
+  const existing = authFailureBuckets.get(key);
+
+  if (!existing || now - existing.firstFailureAt > windowMs) {
+    const next: AuthFailureBucket = {
+      count: 1,
+      firstFailureAt: now,
+      lockedUntil: 0
+    };
+    authFailureBuckets.set(key, next);
+    return { isLocked: false, retryAfterSeconds: 0 };
+  }
+
+  const nextCount = existing.count + 1;
+  const lockedUntil = nextCount >= maxFailures ? now + lockoutMs : 0;
+  authFailureBuckets.set(key, {
+    count: nextCount,
+    firstFailureAt: existing.firstFailureAt,
+    lockedUntil
+  });
+
+  if (!lockedUntil) {
+    return { isLocked: false, retryAfterSeconds: 0 };
+  }
+
+  return {
+    isLocked: true,
+    retryAfterSeconds: Math.max(1, Math.ceil((lockedUntil - now) / 1000))
+  };
+}
+
+function clearAuthFailures(email: string): void {
+  authFailureBuckets.delete(readAuthFailureBucketKey(email));
 }
 
 const sseClients = new Set<Response>();
 const authRateBuckets = new Map<string, AuthRateBucket>();
+const authFailureBuckets = new Map<string, AuthFailureBucket>();
 let schoolDirectoryRefreshPromise: Promise<void> | null = null;
-const tokenSecret = process.env.AUTH_TOKEN_SECRET || 'unistayscout-dev-secret';
+const defaultTokenSecret = 'unistayscout-dev-secret';
+const tokenSecret = process.env.AUTH_TOKEN_SECRET || defaultTokenSecret;
+const isProduction = process.env.NODE_ENV === 'production';
 const tokenTtlSeconds = 60 * 60 * 12;
 const databaseUrl = process.env.DATABASE_URL;
 const dbPool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : null;
+
+if (isProduction) {
+  if (!process.env.AUTH_TOKEN_SECRET || tokenSecret === defaultTokenSecret || tokenSecret.length < 32) {
+    throw new Error('AUTH_TOKEN_SECRET must be set to a strong value (>=32 chars) in production.');
+  }
+}
 
 function fromAccountRow(row: AccountRow): Account {
   return {
@@ -1302,6 +1404,15 @@ function enforceAuthRateLimit(
 }
 
 app.use(cors());
+app.disable('x-powered-by');
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+  next();
+});
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
@@ -1425,6 +1536,12 @@ app.post('/api/admin/invite', async (req, res) => {
 
   if (password.length < 8) {
     res.status(400).json({ message: 'Password must be at least 8 characters.' });
+    return;
+  }
+
+  const adminPasswordError = validateAdminPassword(password);
+  if (adminPasswordError) {
+    res.status(400).json({ message: adminPasswordError });
     return;
   }
 
@@ -1557,6 +1674,13 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
+  const lockout = getAuthLockoutStatus(normalizedEmail);
+  if (lockout.locked) {
+    res.setHeader('Retry-After', String(lockout.retryAfterSeconds));
+    res.status(429).json({ message: 'Account temporarily locked due to repeated failed logins. Please try again later.' });
+    return;
+  }
+
   let account: Account | undefined;
 
   try {
@@ -1567,18 +1691,33 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   if (!account) {
+    const failureState = registerAuthFailure(normalizedEmail);
     await logSecurityAudit('failed_login_no_account', normalizedEmail, req.ip || 'unknown');
+    if (failureState.isLocked) {
+      await logSecurityAudit('login_locked_out', normalizedEmail, req.ip || 'unknown', { retryAfterSeconds: failureState.retryAfterSeconds });
+      res.setHeader('Retry-After', String(failureState.retryAfterSeconds));
+      res.status(429).json({ message: 'Account temporarily locked due to repeated failed logins. Please try again later.' });
+      return;
+    }
     res.status(401).json({ message: 'Invalid credentials.' });
     return;
   }
 
   const passwordMatches = await compare(password, account.passwordHash);
   if (!passwordMatches) {
+    const failureState = registerAuthFailure(normalizedEmail);
     await logSecurityAudit('failed_login_bad_password', normalizedEmail, req.ip || 'unknown');
+    if (failureState.isLocked) {
+      await logSecurityAudit('login_locked_out', normalizedEmail, req.ip || 'unknown', { retryAfterSeconds: failureState.retryAfterSeconds });
+      res.setHeader('Retry-After', String(failureState.retryAfterSeconds));
+      res.status(429).json({ message: 'Account temporarily locked due to repeated failed logins. Please try again later.' });
+      return;
+    }
     res.status(401).json({ message: 'Invalid credentials.' });
     return;
   }
 
+  clearAuthFailures(normalizedEmail);
   await logSecurityAudit('successful_login', normalizedEmail, req.ip || 'unknown', { role: account.role });
 
   res.json({
