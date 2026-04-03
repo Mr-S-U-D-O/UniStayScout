@@ -1,6 +1,6 @@
 {
   "name": "@unistayscout/api",
-  "private": true,
+    "@google/generative-ai": "^0.21.0",
   "version": "0.1.0",
   "type": "module",
   "scripts": {

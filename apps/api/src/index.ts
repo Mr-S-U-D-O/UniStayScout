@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { cors } from 'hono/cors';
 import { Pool } from '@neondatabase/serverless';
 import { compare, hash } from 'bcryptjs';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -14,6 +13,7 @@ type AccountRole = 'student' | 'landlord' | 'admin';
 type Bindings = {
   DATABASE_URL: string;
   AUTH_TOKEN_SECRET: string;
+  CORS_ALLOWED_ORIGINS?: string;
   CLOUDINARY_CLOUD_NAME: string;
   CLOUDINARY_API_KEY: string;
   CLOUDINARY_API_SECRET: string;
@@ -51,7 +51,29 @@ async function getAccountFromToken(c: Context<{ Bindings: Bindings }>) {
     if (result.rows.length === 0) return null;
     const row = result.rows[0];
     return {
-      id: row.id as string,
+    app.use('*', async (c, next) => {
+      const origin = c.req.header('Origin');
+      const allowlist = (c.env.CORS_ALLOWED_ORIGINS || '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+      if (allowlist.length === 0) {
+        c.header('Access-Control-Allow-Origin', '*');
+      } else if (origin && allowlist.includes(origin)) {
+        c.header('Access-Control-Allow-Origin', origin);
+        c.header('Vary', 'Origin');
+      }
+
+      c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+      c.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+
+      if (c.req.method === 'OPTIONS') {
+        return c.body(null, 204);
+      }
+
+      await next();
+    });
       name: row.name as string,
       email: row.email as string,
       phone: row.phone as string,
@@ -67,7 +89,16 @@ async function getAccountFromToken(c: Context<{ Bindings: Bindings }>) {
 function createToken(account: { id: string; role: string }) {
   const payload = {
     userId: account.id,
-    role: account.role,
+        const secret = resolveAuthSecret(c);
+        if (!secret) return null;
+
+        const [headerPart, payloadPart, signaturePart] = parts;
+        const message = `${headerPart}.${payloadPart}`;
+        const isValid = await verifyHmac(message, signaturePart, secret);
+        if (!isValid) return null;
+
+        const payload = JSON.parse(fromBase64Url(payloadPart)) as TokenPayload;
+
     exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24) // 24h
   };
   return `header.${btoa(JSON.stringify(payload))}.signature`;
@@ -90,13 +121,22 @@ app.post('/api/auth/register', async (c) => {
       `INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING *`,
       [id, name, email.toLowerCase().trim(), phone, passwordHash, role, landlordId]
-    );
-    const account = result.rows[0];
+    async function createToken(account: any, c: Context<{ Bindings: Bindings }>) {
+      const secret = resolveAuthSecret(c);
+      if (!secret) {
+        throw new Error('AUTH_TOKEN_SECRET must be configured with at least 32 characters.');
+      }
+
+      const payload: TokenPayload = {
     return c.json({ data: account, token: createToken(account) }, 201);
   } finally {
     await db.end();
   }
-});
+
+      const headerPart = toBase64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+      const payloadPart = toBase64Url(JSON.stringify(payload));
+      const signaturePart = await createHmac(`${headerPart}.${payloadPart}`, secret);
+      return `${headerPart}.${payloadPart}.${signaturePart}`;
 
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json();
@@ -112,7 +152,7 @@ app.post('/api/auth/login', async (c) => {
     await db.end();
   }
 });
-
+        return c.json({ data: account, token: await createToken(account, c) }, 201);
 // --- Schools ---
 app.get('/api/schools', async (c) => {
   const db = new Pool({ connectionString: c.env.DATABASE_URL });
@@ -127,7 +167,7 @@ app.get('/api/schools', async (c) => {
 // --- Listings ---
 app.get('/api/listings', async (c) => {
   const status = c.req.query('status') || 'approved';
-  const db = new Pool({ connectionString: c.env.DATABASE_URL });
+        return c.json({ data: account, token: await createToken(account, c) });
   try {
     const result = await db.query('SELECT * FROM listings WHERE status = $1', [status]);
     return c.json({ data: result.rows.map(r => ({
@@ -135,7 +175,19 @@ app.get('/api/listings', async (c) => {
       latitude: Number(r.latitude),
       longitude: Number(r.longitude),
       price: Number(r.price),
-      amenities: r.amenities || [],
+      const requestedStatus = c.req.query('status') || 'approved';
+      const allowedStatuses: ListingStatus[] = ['pending', 'approved', 'rejected'];
+      const status = allowedStatuses.includes(requestedStatus as ListingStatus)
+        ? (requestedStatus as ListingStatus)
+        : 'approved';
+
+      if (status !== 'approved') {
+        const user = await getAccountFromToken(c);
+        if (!user || user.role !== 'admin') {
+          return c.json({ message: 'Forbidden' }, 403);
+        }
+      }
+
       photos: r.photos || []
     }))});
   } finally {
