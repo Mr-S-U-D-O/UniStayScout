@@ -496,8 +496,9 @@ function App() {
     return (
       <main className="auth-screen">
         <section className="auth-hero panel">
+          <p className="eyebrow">Map-first Housing Intelligence</p>
           <h1>UniStayScout</h1>
-          <p>Sign in to access your role-specific dashboard and map workspace.</p>
+          <p className="hero-copy">Sign in to access your role-specific dashboard and map workspace.</p>
           <ul>
             <li>Students: discover listings on a live school-centered map.</li>
             <li>Landlords: publish properties and track moderation status.</li>
@@ -517,6 +518,7 @@ function App() {
         </section>
 
         <section className="auth-card panel">
+          <h2>{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
           <div className="auth-tabs">
             <button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>
               Login
@@ -606,7 +608,8 @@ function App() {
     <main className="app-shell">
       <header className="topbar panel">
         <div>
-          <h1>UniStayScout MVP</h1>
+          <p className="eyebrow">Live Workspace</p>
+          <h1>UniStayScout</h1>
           <p>
             Logged in as {authUser.name} ({authUser.role})
           </p>
@@ -644,7 +647,7 @@ function App() {
         <section className="summary-grid">
           {dashboardCards.map((card) => (
             <article key={card.label} className="summary-card panel">
-              <p className="muted">{card.label}</p>
+              <p className="summary-label">{card.label}</p>
               <h3>{card.value}</h3>
             </article>
           ))}
@@ -832,6 +835,15 @@ function App() {
         </aside>
 
         <section className="map-pane panel">
+          <div className="map-head">
+            <div>
+              <h2>Explore on Map</h2>
+              <p className="muted">
+                {selectedSchool?.name || 'School'} • {listings.length} listing{listings.length === 1 ? '' : 's'} in view
+              </p>
+            </div>
+            <span className="meta-pill">AI highlighted: {recommendedIds.length}</span>
+          </div>
           {selectedSchool && (
             <MapContainer
               className="map-canvas"
@@ -876,6 +888,11 @@ function App() {
             <>
               <img src={selectedListing.photos[0]} alt={selectedListing.title} className="listing-photo" />
               <h2>{selectedListing.title}</h2>
+              <div className="listing-meta-row">
+                <span className="meta-pill">{selectedListing.roomType}</span>
+                <span className="meta-pill">{selectedListing.distanceKm?.toFixed(1)} km</span>
+                <span className="meta-pill">{selectedListing.views} views</span>
+              </div>
               <p>
                 <strong>
                   {selectedListing.price} {selectedListing.currency}

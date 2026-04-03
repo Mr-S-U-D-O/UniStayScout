@@ -1,11 +1,19 @@
 :root {
-  font-family: 'Trebuchet MS', 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif;
+  font-family: 'Segoe UI Variable Display', 'Trebuchet MS', 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif;
   line-height: 1.5;
-  color: #10243b;
+  color: #0f2237;
+  --ink: #0f2237;
+  --muted: #5e7792;
+  --brand: #0063b8;
+  --brand-strong: #004d8f;
+  --danger: #b74131;
+  --panel: rgba(255, 255, 255, 0.92);
+  --panel-border: #d4e3f4;
+  --shadow: 0 14px 30px rgba(14, 35, 58, 0.12);
   background:
-    radial-gradient(circle at 15% 10%, rgba(120, 205, 255, 0.35) 0%, rgba(120, 205, 255, 0) 35%),
-    radial-gradient(circle at 90% 5%, rgba(255, 214, 153, 0.35) 0%, rgba(255, 214, 153, 0) 30%),
-    linear-gradient(180deg, #f4fbff 0%, #eaf4ff 100%);
+    radial-gradient(circle at 15% 10%, rgba(67, 184, 255, 0.28) 0%, rgba(67, 184, 255, 0) 35%),
+    radial-gradient(circle at 85% 0%, rgba(255, 206, 126, 0.3) 0%, rgba(255, 206, 126, 0) 35%),
+    linear-gradient(180deg, #f6fbff 0%, #e9f2fb 100%);
 }
 
 * {
@@ -20,38 +28,58 @@ body {
 .app-shell {
   max-width: 1600px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 1rem 1.2rem;
   display: grid;
-  gap: 0.9rem;
+  gap: 1rem;
 }
 
 .panel {
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid #bdd7f3;
-  border-radius: 16px;
-  padding: 0.9rem;
-  box-shadow: 0 10px 20px rgba(16, 36, 59, 0.09);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  padding: 1rem;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(4px);
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  align-items: flex-start;
+  align-items: end;
 }
 
 h1 {
   margin: 0;
+  letter-spacing: -0.03em;
+  font-size: clamp(1.4rem, 2vw, 2rem);
 }
 
 h2,
 h3 {
   margin-top: 0;
+  margin-bottom: 0.45rem;
+  letter-spacing: -0.02em;
 }
 
 .topbar p {
   margin: 0.2rem 0 0;
-  color: #376086;
+  color: var(--muted);
+}
+
+.eyebrow {
+  margin: 0;
+  display: inline-block;
+  color: var(--brand-strong);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+
+.hero-copy {
+  color: var(--muted);
+  max-width: 56ch;
 }
 
 .topbar-controls {
@@ -70,28 +98,41 @@ h3 {
 
 .summary-card h3 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: clamp(1.3rem, 1.2vw, 1.65rem);
+}
+
+.summary-label {
+  margin: 0 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .auth-screen {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
-  gap: 1rem;
+  gap: 1.2rem;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 1.2rem;
+  padding: 1.5rem;
   align-items: center;
 }
 
 .auth-hero ul {
   margin: 0.8rem 0;
   padding-left: 1.1rem;
+  color: #2d5275;
 }
 
 .auth-card {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.8rem;
+}
+
+.auth-card h2 {
+  margin: 0;
 }
 
 .auth-tabs {
@@ -101,12 +142,12 @@ h3 {
 }
 
 .auth-tabs .active {
-  background: #0f2a44;
+  background: var(--brand-strong);
 }
 
 .auth-error {
   margin: 0;
-  color: #b32f2a;
+  color: var(--danger);
   font-weight: 700;
 }
 
@@ -124,10 +165,10 @@ h3 {
 
 label {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.3rem;
   font-size: 0.86rem;
   font-weight: 600;
-  color: #24496d;
+  color: #1e456a;
 }
 
 input,
@@ -141,27 +182,42 @@ button {
 }
 
 button {
-  background: #1276d1;
+  background: var(--brand);
   color: #fff;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
 }
 
 button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 16px rgba(18, 118, 209, 0.22);
+  box-shadow: 0 8px 16px rgba(0, 99, 184, 0.22);
 }
 
 button.danger {
-  background: #c4412e;
+  background: var(--danger);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--brand);
+  outline: 2px solid rgba(0, 99, 184, 0.16);
+  outline-offset: 1px;
 }
 
 .status-line {
-  background: #0f2a44;
+  background: linear-gradient(90deg, #0f2a44 0%, #154163 100%);
   color: #d8ebff;
   border-radius: 12px;
-  padding: 0.5rem 0.8rem;
+  padding: 0.55rem 0.85rem;
   font-size: 0.9rem;
 }
 
@@ -175,6 +231,7 @@ button.danger {
 .left-sidebar,
 .detail-pane {
   overflow: auto;
+  max-height: calc(100vh - 230px);
 }
 
 .map-pane {
@@ -182,14 +239,28 @@ button.danger {
   overflow: hidden;
 }
 
+.map-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid #d7e5f3;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(245, 250, 255, 0.94));
+}
+
+.map-head h2 {
+  margin: 0;
+}
+
 .map-canvas {
   height: 100%;
-  min-height: 620px;
+  min-height: 560px;
   width: 100%;
 }
 
 .muted {
-  color: #617e98;
+  color: var(--muted);
 }
 
 .profile-fields {
@@ -246,7 +317,7 @@ button.danger {
   background: #f8fbff;
   border: 1px solid #c9def3;
   border-radius: 12px;
-  padding: 0.65rem;
+  padding: 0.75rem;
 }
 
 .stack-card p {
@@ -273,10 +344,27 @@ button.danger {
 
 .listing-photo {
   width: 100%;
-  height: 180px;
+  height: 200px;
   object-fit: cover;
   border-radius: 10px;
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.listing-meta-row {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.55rem;
+}
+
+.meta-pill {
+  background: #e9f4ff;
+  color: #19517d;
+  border: 1px solid #c4ddf5;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  padding: 0.26rem 0.6rem;
+  font-weight: 700;
 }
 
 .review-form {
@@ -292,7 +380,11 @@ button.danger {
 
   .detail-pane {
     grid-column: 1 / -1;
-    max-height: 420px;
+    max-height: 460px;
+  }
+
+  .left-sidebar {
+    max-height: none;
   }
 }
 
@@ -318,7 +410,16 @@ button.danger {
     min-height: 0;
   }
 
+  .map-head {
+    display: grid;
+  }
+
   .map-canvas {
     min-height: 420px;
+  }
+
+  .left-sidebar,
+  .detail-pane {
+    max-height: none;
   }
 }
