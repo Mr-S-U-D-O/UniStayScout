@@ -185,189 +185,11 @@ const seedSchools: School[] = [
 
 let schools: School[] = [...seedSchools];
 
-const seedListings: Listing[] = [
-  {
-    id: 'lst-1',
-    landlordId: 'landlord-1',
-    landlordName: 'Bright Rooms SA',
-    title: 'Melville Student Loft',
-    description: 'Private room with study desk, fast wifi, and secure access.',
-    schoolId: 'uj-auckland-park',
-    locationLabel: 'Melville, Johannesburg',
-    latitude: -26.1807,
-    longitude: 28.0008,
-    price: 4200,
-    currency: 'ZAR',
-    roomType: 'private',
-    amenities: ['wifi', 'laundry', 'security'],
-    photos: ['https://picsum.photos/seed/unistay1/640/420'],
-    isVerified: true,
-    availableBeds: 2,
-    status: 'approved',
-    adminComment: '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    views: 24
-  },
-  {
-    id: 'lst-2',
-    landlordId: 'landlord-2',
-    landlordName: 'Campus Living Hub',
-    title: 'Auckland Shared House',
-    description: 'Shared accommodation with spacious kitchen and backup power.',
-    schoolId: 'uj-auckland-park',
-    locationLabel: 'Auckland Park, Johannesburg',
-    latitude: -26.186,
-    longitude: 27.995,
-    price: 3100,
-    currency: 'ZAR',
-    roomType: 'shared',
-    amenities: ['wifi', 'backup-power', 'parking'],
-    photos: ['https://picsum.photos/seed/unistay2/640/420'],
-    isVerified: false,
-    availableBeds: 4,
-    status: 'pending',
-    adminComment: 'Please upload at least 3 interior photos.',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    views: 8
-  },
-  {
-    id: 'lst-3',
-    landlordId: 'landlord-3',
-    landlordName: 'Braam Student Homes',
-    title: 'Braamfontein Studio Pods',
-    description: 'Compact private pods with quiet floors and controlled access.',
-    schoolId: 'wits-braamfontein',
-    locationLabel: 'Braamfontein, Johannesburg',
-    latitude: -26.1937,
-    longitude: 28.0279,
-    price: 5300,
-    currency: 'ZAR',
-    roomType: 'private',
-    amenities: ['wifi', 'security', 'laundry', 'backup-power'],
-    photos: ['https://picsum.photos/seed/unistay3/640/420'],
-    isVerified: true,
-    availableBeds: 3,
-    status: 'approved',
-    adminComment: '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    views: 37
-  },
-  {
-    id: 'lst-4',
-    landlordId: 'landlord-1',
-    landlordName: 'Bright Rooms SA',
-    title: 'Auckland Women-Only Shared Flat',
-    description: 'Secure shared flat with biometric access and walkable campus route.',
-    schoolId: 'uj-auckland-park',
-    locationLabel: 'Auckland Park, Johannesburg',
-    latitude: -26.1844,
-    longitude: 28.0036,
-    price: 3600,
-    currency: 'ZAR',
-    roomType: 'shared',
-    amenities: ['wifi', 'security', 'parking'],
-    photos: ['https://picsum.photos/seed/unistay4/640/420'],
-    isVerified: true,
-    availableBeds: 5,
-    status: 'approved',
-    adminComment: '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    views: 19
-  },
-  {
-    id: 'lst-5',
-    landlordId: 'landlord-4',
-    landlordName: 'Metro Student Rentals',
-    title: 'Wits Shared Loft Block',
-    description: 'Shared lofts with study lounge and 24/7 concierge.',
-    schoolId: 'wits-braamfontein',
-    locationLabel: 'Braamfontein, Johannesburg',
-    latitude: -26.1912,
-    longitude: 28.0338,
-    price: 4100,
-    currency: 'ZAR',
-    roomType: 'shared',
-    amenities: ['wifi', 'laundry', 'security'],
-    photos: ['https://picsum.photos/seed/unistay5/640/420'],
-    isVerified: false,
-    availableBeds: 6,
-    status: 'approved',
-    adminComment: '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    views: 11
-  },
-  {
-    id: 'lst-6',
-    landlordId: 'landlord-2',
-    landlordName: 'Campus Living Hub',
-    title: 'Melville Premium Private Room',
-    description: 'Premium private room with ensuite, fast wifi, and cleaning service.',
-    schoolId: 'uj-auckland-park',
-    locationLabel: 'Melville, Johannesburg',
-    latitude: -26.1789,
-    longitude: 28.0047,
-    price: 6200,
-    currency: 'ZAR',
-    roomType: 'private',
-    amenities: ['wifi', 'laundry', 'security', 'backup-power', 'parking'],
-    photos: ['https://picsum.photos/seed/unistay6/640/420'],
-    isVerified: true,
-    availableBeds: 1,
-    status: 'approved',
-    adminComment: '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    views: 42
-  }
-];
-
-let listings: Listing[] = [...seedListings];
+let listings: Listing[] = [];
 let interests: Interest[] = [];
 let reviews: Review[] = [];
 
-const seedAccountBlueprints: Array<{
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-  role: AccountRole;
-  landlordId?: string;
-}> = [
-  {
-    id: 'usr-admin-1',
-    name: 'System Admin',
-    email: 'admin@unistayscout.local',
-    phone: '+27 11 000 0001',
-    password: 'admin123',
-    role: 'admin'
-  },
-  {
-    id: 'usr-landlord-1',
-    name: 'Bright Rooms SA',
-    email: 'landlord@unistayscout.local',
-    phone: '+27 11 000 0002',
-    password: 'landlord123',
-    role: 'landlord',
-    landlordId: 'landlord-1'
-  },
-  {
-    id: 'usr-student-1',
-    name: 'Lerato Student',
-    email: 'student@unistayscout.local',
-    phone: '+27 71 000 1234',
-    password: 'student123',
-    role: 'student'
-  }
-];
-
 let accounts: Account[] = [];
-let seedAccountsCache: Account[] = [];
 const profileStore = new Map<string, Record<string, unknown>>();
 
 const sseClients = new Set<Response>();
@@ -447,36 +269,9 @@ function fromReviewRow(row: ReviewRow): Review {
   };
 }
 
-async function ensureSeedAccounts(): Promise<Account[]> {
-  if (seedAccountsCache.length > 0) {
-    return seedAccountsCache;
-  }
-
-  const now = new Date().toISOString();
-  const seededAccounts: Account[] = [];
-
-  for (const seed of seedAccountBlueprints) {
-    seededAccounts.push({
-      id: seed.id,
-      name: seed.name,
-      email: seed.email,
-      phone: seed.phone,
-      passwordHash: await hash(seed.password, 10),
-      role: seed.role,
-      landlordId: seed.landlordId,
-      createdAt: now
-    });
-  }
-
-  seedAccountsCache = seededAccounts;
-  return seedAccountsCache;
-}
-
 async function initializeAccountStore(): Promise<void> {
-  const seedAccounts = await ensureSeedAccounts();
-
   if (!dbPool) {
-    accounts = [...seedAccounts];
+    accounts = [];
     return;
   }
 
@@ -506,30 +301,6 @@ async function initializeAccountStore(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
-
-  const countResult = await dbPool.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM accounts;');
-  const rowCount = Number(countResult.rows[0]?.count || '0');
-
-  if (rowCount === 0) {
-    for (const account of seedAccounts) {
-      await dbPool.query(
-        `
-        INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
-      `,
-        [
-          account.id,
-          account.name,
-          account.email,
-          account.phone,
-          account.passwordHash,
-          account.role,
-          account.landlordId || null,
-          account.createdAt
-        ]
-      );
-    }
-  }
 
   const rowsResult = await dbPool.query<AccountRow>(`
     SELECT id, name, email, phone, password_hash, role, landlord_id, created_at
@@ -696,51 +467,6 @@ async function initializeMarketplaceStore(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL
     );
   `);
-
-  const listingCountResult = await dbPool.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM listings;');
-  const listingCount = Number(listingCountResult.rows[0]?.count || '0');
-
-  if (listingCount === 0) {
-    for (const listing of seedListings) {
-      await dbPool.query(
-        `
-          INSERT INTO listings (
-            id, landlord_id, landlord_name, title, description, school_id, location_label,
-            latitude, longitude, location_geom, price, currency, room_type, amenities, photos,
-            is_verified, available_beds, status, admin_comment, created_at, updated_at, views
-          )
-          VALUES (
-            $1, $2, $3, $4, $5, $6, $7,
-            $8, $9, ST_SetSRID(ST_MakePoint($9, $8), 4326), $10, $11, $12, $13::jsonb, $14::jsonb,
-            $15, $16, $17, $18, $19, $20, $21
-          );
-        `,
-        [
-          listing.id,
-          listing.landlordId,
-          listing.landlordName,
-          listing.title,
-          listing.description,
-          listing.schoolId,
-          listing.locationLabel,
-          listing.latitude,
-          listing.longitude,
-          listing.price,
-          listing.currency,
-          listing.roomType,
-          JSON.stringify(listing.amenities),
-          JSON.stringify(listing.photos),
-          listing.isVerified,
-          listing.availableBeds,
-          listing.status,
-          listing.adminComment,
-          listing.createdAt,
-          listing.updatedAt,
-          listing.views
-        ]
-      );
-    }
-  }
 
   const listingRows = await dbPool.query<ListingRow>(`
     SELECT
@@ -1407,13 +1133,7 @@ app.get('/api/geo/search', async (req, res) => {
 });
 
 app.get('/api/auth/demo-accounts', (_req, res) => {
-  res.json({
-    data: [
-      { role: 'admin', email: 'admin@unistayscout.local', password: 'admin123' },
-      { role: 'landlord', email: 'landlord@unistayscout.local', password: 'landlord123' },
-      { role: 'student', email: 'student@unistayscout.local', password: 'student123' }
-    ]
-  });
+  res.json({ data: [] });
 });
 
 app.post('/api/auth/register', async (req, res) => {

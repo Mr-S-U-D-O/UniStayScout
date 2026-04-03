@@ -17,6 +17,8 @@ Map-first student accommodation platform with AI-assisted discovery, role-based 
    - `npm run dev:web`
 3. Run backend:
    - `npm run dev:api`
+4. Provision real data into Postgres:
+   - `npm run provision:api -- --file path/to/provision.json`
 
 ## Current Scope (MVP)
 
@@ -29,6 +31,9 @@ Map-first student accommodation platform with AI-assisted discovery, role-based 
 ## Notes
 
 This scaffold is local-first and zero-cost focused for MVP development.
+
+The API includes a provisioning command for importing real accounts, listings, profiles,
+interests, and reviews from an explicit JSON file. It does not ship with seeded dummy data.
 
 ## Project Status
 

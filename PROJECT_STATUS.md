@@ -26,6 +26,7 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - PostgreSQL-backed account store bootstrap with in-memory fallback implemented.
 - Local PostGIS docker foundation and DB init SQL added.
 - PostgreSQL-backed listings, interests, and reviews persistence implemented with in-memory fallback.
+- Synthetic demo listings and demo credentials were removed; the app now boots from persisted real data only.
 - PostGIS geometry column/indexes and SQL radius filtering for listings implemented.
 - Role-intent dashboard split implemented: student discovery map, landlord portfolio workspace, admin operations workspace.
 - Backend-driven landlord/admin KPI endpoints implemented and wired into role dashboards.
@@ -39,6 +40,7 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Add login/register validation refinements and suspicious-login audit logs.
 - Keep tightening the UI/UX foundation without changing product behavior.
 - Add PostGIS proximity analytics endpoints and deeper admin SLA/risk insights.
+- Add and document a real data provisioning workflow for Postgres imports.
 
 ## Backlog
 - Add production-grade file upload pipeline for listing media.
@@ -66,11 +68,13 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - PostgreSQL account-store foundation was added.
 - Live school discovery and listing geocoding were wired to OpenStreetMap/Nominatim.
 - PostgreSQL persistence was added for listings, interests, and reviews.
+- Synthetic seed accounts/listings were removed so the app now depends on persisted data instead of dummy records.
 - PostGIS SQL filtering for listing proximity was added with in-memory fallback.
 - Role-specific dashboard intent separation was added to remove cross-role search behavior.
 - Landlord and admin dashboards were switched to backend-provided KPI insights.
 - Admin dashboard redesign now surfaces selection policy, privileges, and operational health in one console.
 - Live build validation passed after consolidation work.
+- Real-data provisioning command was added for importing accounts, listings, profiles, interests, and reviews from JSON.
 
 ## Working Rules
 - Update this file whenever priorities change, work is completed, or major decisions are made.
