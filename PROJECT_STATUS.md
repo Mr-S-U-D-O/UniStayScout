@@ -27,6 +27,8 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Local PostGIS docker foundation and DB init SQL added.
 - PostgreSQL-backed listings, interests, and reviews persistence implemented with in-memory fallback.
 - PostGIS geometry column/indexes and SQL radius filtering for listings implemented.
+- Role-intent dashboard split implemented: student discovery map, landlord portfolio workspace, admin operations workspace.
+- Backend-driven landlord/admin KPI endpoints implemented and wired into role dashboards.
 - Advanced map filtering, sorting, verified-only, and amenity filtering implemented.
 - Live school directory discovery from OpenStreetMap added.
 - Geocoded landlord property locations added.
@@ -35,7 +37,7 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 ## In Progress
 - Add login/register validation refinements and suspicious-login audit logs.
 - Keep tightening the UI/UX foundation without changing product behavior.
-- Add PostGIS proximity ordering and analytics endpoints.
+- Add PostGIS proximity analytics endpoints and admin queue insights.
 
 ## Backlog
 - Add production-grade file upload pipeline for listing media.
@@ -64,6 +66,8 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Live school discovery and listing geocoding were wired to OpenStreetMap/Nominatim.
 - PostgreSQL persistence was added for listings, interests, and reviews.
 - PostGIS SQL filtering for listing proximity was added with in-memory fallback.
+- Role-specific dashboard intent separation was added to remove cross-role search behavior.
+- Landlord and admin dashboards were switched to backend-provided KPI insights.
 - Live build validation passed after consolidation work.
 
 ## Working Rules

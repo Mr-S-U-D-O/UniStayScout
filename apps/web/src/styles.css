@@ -309,6 +309,11 @@ button:disabled {
   gap: 0.4rem;
 }
 
+.role-intent-copy {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
 .user-badge {
   display: inline-flex;
   align-items: center;
@@ -338,6 +343,16 @@ button:disabled {
   gap: 1rem;
   flex-wrap: wrap;
   align-items: flex-end;
+}
+
+.role-mode-pill {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .school-search-form {
@@ -408,6 +423,34 @@ button:disabled {
   max-height: calc(100vh - 220px);
   overflow-y: auto;
   padding-right: 0.5rem; /* For scrollbar */
+}
+
+.role-intent-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-height: 300px;
+}
+
+.intent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.intent-metric {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.intent-metric strong {
+  font-size: 1.3rem;
+  color: var(--ink);
 }
 
 /* Map Pane */
@@ -707,6 +750,10 @@ button:disabled {
     grid-template-columns: 320px 1fr;
   }
 
+  .intent-grid {
+    grid-template-columns: 1fr;
+  }
+
   .detail-pane {
     grid-column: 1 / -1;
     max-height: none;
@@ -759,6 +806,10 @@ button:disabled {
   .left-sidebar, .detail-pane {
     max-height: none;
     overflow: visible;
+  }
+
+  .role-intent-pane {
+    max-height: none;
   }
 
   .detail-pane {

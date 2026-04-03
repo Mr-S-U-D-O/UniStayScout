@@ -13,6 +13,7 @@ import {
   AuthUser, AuthRole, AuthSession,
   School, Listing, Review, Interest,
   DashboardCard, ChatMessage,
+  LandlordInsights, AdminInsights,
   UserProfile, StudentProfile,
   makeEmptyStudentProfile, makeEmptyLandlordProfile, makeEmptyAdminProfile,
 } from './types';
@@ -67,6 +68,8 @@ function App() {
   const [pendingListings, setPendingListings] = useState<Listing[]>([]);
   const [interests, setInterests] = useState<Interest[]>([]);
   const [landlordListings, setLandlordListings] = useState<Listing[]>([]);
+  const [landlordInsights, setLandlordInsights] = useState<LandlordInsights | null>(null);
+  const [adminInsights, setAdminInsights] = useState<AdminInsights | null>(null);
   const [isLoadingListings, setIsLoadingListings] = useState(false);
 
   // ─── Landlord name ────────────────────────────────────────────────────────
@@ -241,6 +244,7 @@ function App() {
   function logout() {
     setAuthUser(null); setAuthToken('');
     setUserProfile(null); setShowOnboarding(false); setProfileModalOpen(false);
+    setLandlordInsights(null); setAdminInsights(null);
     setDashboardCards([]); setListings([]); setSelectedListingId('');
     setAuthForm((c) => ({ ...c, password: '' }));
     localStorage.removeItem(AUTH_STORAGE_KEY);
@@ -269,18 +273,24 @@ function App() {
   }
 
   async function loadAdminData() {
-    const [pending, leadData] = await Promise.all([
+    const [pending, leadData, insights] = await Promise.all([
       apiGet<{ data: Listing[] }>('/api/admin/pending-listings', authToken),
       apiGet<{ data: Interest[] }>('/api/admin/interests', authToken),
+      apiGet<{ data: AdminInsights }>('/api/admin/insights', authToken),
     ]);
     setPendingListings(pending.data);
     setInterests(leadData.data);
+    setAdminInsights(insights.data);
   }
 
   async function loadLandlordData() {
     if (!landlordId) { setLandlordListings([]); return; }
-    const r = await apiGet<{ data: Listing[] }>(`/api/landlords/${landlordId}/listings`, authToken);
+    const [r, insights] = await Promise.all([
+      apiGet<{ data: Listing[] }>(`/api/landlords/${landlordId}/listings`, authToken),
+      apiGet<{ data: LandlordInsights }>('/api/landlord/insights', authToken),
+    ]);
     setLandlordListings(r.data);
+    setLandlordInsights(insights.data);
   }
 
   async function loadReviews(listingId: string) {
@@ -290,7 +300,9 @@ function App() {
 
   async function refreshForRole() {
     if (!authUser || !authToken) return;
-    await loadListings();
+    if (role === 'student') {
+      await loadListings();
+    }
     await loadDashboardSummary();
     if (role === 'admin') await loadAdminData();
     if (role === 'landlord') await loadLandlordData();
@@ -485,6 +497,7 @@ function App() {
       </AnimatePresence>
 
       <TopBar
+        role={role}
         authUser={authUser}
         userProfile={userProfile}
         schools={schools}
@@ -544,54 +557,156 @@ function App() {
           )}
         </aside>
 
-        <MapWorkspace
-          selectedSchool={selectedSchool}
-          selectedListing={selectedListing}
-          listings={listings}
-          recommendedIds={recommendedIds}
-          radiusKm={radiusKm}
-          mapTheme={mapTheme}
-          setSelectedListingId={setSelectedListingId}
-        />
+        {role === 'student' && (
+          <>
+            <MapWorkspace
+              selectedSchool={selectedSchool}
+              selectedListing={selectedListing}
+              listings={listings}
+              recommendedIds={recommendedIds}
+              radiusKm={radiusKm}
+              mapTheme={mapTheme}
+              setSelectedListingId={setSelectedListingId}
+            />
 
-        <aside className="detail-pane">
-          <AnimatePresence mode="wait">
-            {!selectedListing && (
-              <motion.div
-                key="empty"
-                className="section-card detail-empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <div className="empty-state">
-                  <span className="empty-icon">📍</span>
-                  <p>Select a listing pin on the map to view details.</p>
-                </div>
-              </motion.div>
-            )}
-            {selectedListing && (
-              <motion.div
-                key={selectedListing.id}
-                initial={{ opacity: 0, x: 24 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -24 }}
-                transition={{ duration: 0.3 }}
-              >
-                <ListingDetail
-                  listing={selectedListing}
-                  school={selectedSchool}
-                  reviews={reviews}
-                  role={role}
-                  studentName={authUser.name}
-                  submitInterest={submitInterest}
-                  submitReview={submitReview}
-                  setStatusMessage={setStatusMessage}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </aside>
+            <aside className="detail-pane">
+              <AnimatePresence mode="wait">
+                {!selectedListing && (
+                  <motion.div
+                    key="empty"
+                    className="section-card detail-empty"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <div className="empty-state">
+                      <span className="empty-icon">📍</span>
+                      <p>Select a listing pin on the map to view details.</p>
+                    </div>
+                  </motion.div>
+                )}
+                {selectedListing && (
+                  <motion.div
+                    key={selectedListing.id}
+                    initial={{ opacity: 0, x: 24 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -24 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <ListingDetail
+                      listing={selectedListing}
+                      school={selectedSchool}
+                      reviews={reviews}
+                      role={role}
+                      studentName={authUser.name}
+                      submitInterest={submitInterest}
+                      submitReview={submitReview}
+                      setStatusMessage={setStatusMessage}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </aside>
+          </>
+        )}
+
+        {role === 'landlord' && (
+          <aside className="role-intent-pane">
+            <section className="section-card">
+              <div className="section-head">
+                <h2>Portfolio Health</h2>
+                <p className="muted">Track listing quality and moderation outcomes.</p>
+              </div>
+              <div className="intent-grid">
+                <article className="intent-metric">
+                  <span className="muted">Active listings</span>
+                  <strong>{landlordInsights?.activeListings ?? landlordListings.length}</strong>
+                </article>
+                <article className="intent-metric">
+                  <span className="muted">Pending review</span>
+                  <strong>{landlordInsights?.pendingReview ?? landlordListings.filter((item) => item.status === 'pending').length}</strong>
+                </article>
+                <article className="intent-metric">
+                  <span className="muted">Approved</span>
+                  <strong>{landlordInsights?.approvedListings ?? landlordListings.filter((item) => item.status === 'approved').length}</strong>
+                </article>
+                <article className="intent-metric">
+                  <span className="muted">Avg monthly price</span>
+                  <strong>R{landlordInsights?.avgMonthlyPrice ?? Math.round(
+                    landlordListings.length === 0
+                      ? 0
+                      : landlordListings.reduce((sum, item) => sum + item.price, 0) / landlordListings.length
+                  )}</strong>
+                </article>
+              </div>
+            </section>
+
+            <section className="section-card">
+              <div className="section-head">
+                <h3>Action Queue</h3>
+                <p className="muted">What needs attention now.</p>
+              </div>
+              <div className="stack-list">
+                <article className="stack-card">
+                  <p><strong>{landlordInsights?.rejectedListings ?? landlordListings.filter((item) => item.status === 'rejected').length}</strong> listings need correction and resubmission.</p>
+                </article>
+                <article className="stack-card">
+                  <p><strong>{landlordInsights?.unverifiedListings ?? landlordListings.filter((item) => !item.isVerified).length}</strong> listings are not verified yet.</p>
+                </article>
+                <article className="stack-card">
+                  <p><strong>{landlordInsights?.leadVolume ?? 0}</strong> leads captured ({landlordInsights?.conversionRatePct ?? 0}% view-to-lead conversion).</p>
+                </article>
+              </div>
+            </section>
+          </aside>
+        )}
+
+        {role === 'admin' && (
+          <aside className="role-intent-pane">
+            <section className="section-card">
+              <div className="section-head">
+                <h2>Operations Snapshot</h2>
+                <p className="muted">Moderation throughput and lead workload.</p>
+              </div>
+              <div className="intent-grid">
+                <article className="intent-metric">
+                  <span className="muted">Pending moderation</span>
+                  <strong>{adminInsights?.pendingModeration ?? pendingListings.length}</strong>
+                </article>
+                <article className="intent-metric">
+                  <span className="muted">Student leads</span>
+                  <strong>{adminInsights?.studentLeads ?? interests.length}</strong>
+                </article>
+                <article className="intent-metric">
+                  <span className="muted">High priority queue</span>
+                  <strong>{adminInsights?.highPriorityQueue ?? pendingListings.filter((item) => item.isVerified === false).length}</strong>
+                </article>
+                <article className="intent-metric">
+                  <span className="muted">Needs review now</span>
+                  <strong>{adminInsights?.stalePendingCount ?? Math.min(pendingListings.length, 8)}</strong>
+                </article>
+              </div>
+            </section>
+
+            <section className="section-card">
+              <div className="section-head">
+                <h3>Admin Intent</h3>
+                <p className="muted">Moderate, secure, and unblock supply.</p>
+              </div>
+              <div className="stack-list">
+                <article className="stack-card">
+                  <p>Focus on queue quality: approve valid listings, reject incomplete ones with clear reason.</p>
+                </article>
+                <article className="stack-card">
+                  <p>Monitor lead volume: <strong>{adminInsights?.recentLeads ?? 0}</strong> new leads in the last 24h.</p>
+                </article>
+                <article className="stack-card">
+                  <p>This role is operations-first and moderation-first, not discovery search.</p>
+                </article>
+              </div>
+            </section>
+          </aside>
+        )}
       </section>
     </main>
   );

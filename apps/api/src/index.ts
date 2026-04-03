@@ -1443,6 +1443,71 @@ app.get('/api/dashboard-summary', (req, res) => {
   });
 });
 
+app.get('/api/landlord/insights', (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+  if (!requireRole(auth, ['landlord'], res)) {
+    return;
+  }
+
+  const landlordId = auth.account.landlordId;
+  if (!landlordId) {
+    res.status(400).json({ message: 'Landlord profile is incomplete.' });
+    return;
+  }
+
+  const mine = listings.filter((item) => item.landlordId === landlordId);
+  const mineIds = new Set(mine.map((item) => item.id));
+  const myLeads = interests.filter((item) => mineIds.has(item.listingId));
+  const totalViews = mine.reduce((sum, item) => sum + item.views, 0);
+  const avgMonthlyPrice = mine.length === 0 ? 0 : Math.round(mine.reduce((sum, item) => sum + item.price, 0) / mine.length);
+  const conversionRate = totalViews > 0 ? Number(((myLeads.length / totalViews) * 100).toFixed(1)) : 0;
+
+  res.json({
+    data: {
+      activeListings: mine.length,
+      pendingReview: mine.filter((item) => item.status === 'pending').length,
+      approvedListings: mine.filter((item) => item.status === 'approved').length,
+      rejectedListings: mine.filter((item) => item.status === 'rejected').length,
+      unverifiedListings: mine.filter((item) => !item.isVerified).length,
+      avgMonthlyPrice,
+      totalViews,
+      leadVolume: myLeads.length,
+      conversionRatePct: conversionRate
+    }
+  });
+});
+
+app.get('/api/admin/insights', (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+  if (!requireRole(auth, ['admin'], res)) {
+    return;
+  }
+
+  const pending = listings.filter((item) => item.status === 'pending');
+  const now = Date.now();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const stalePendingCount = pending.filter((item) => now - new Date(item.updatedAt).getTime() > oneDayMs).length;
+  const recentLeads = interests.filter((item) => now - new Date(item.createdAt).getTime() <= oneDayMs).length;
+  const unverifiedPending = pending.filter((item) => !item.isVerified).length;
+
+  res.json({
+    data: {
+      pendingModeration: pending.length,
+      totalListings: listings.length,
+      studentLeads: interests.length,
+      stalePendingCount,
+      recentLeads,
+      highPriorityQueue: unverifiedPending
+    }
+  });
+});
+
 app.get('/api/listings', async (req, res) => {
   const auth = requireAuth(req, res);
   if (!auth) {

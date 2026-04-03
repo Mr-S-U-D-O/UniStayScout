@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { AuthUser, School, DashboardCard, UserProfile, StudentProfile } from '../types';
 
 type Props = {
+  role: 'student' | 'landlord' | 'admin';
   authUser: AuthUser;
   userProfile: UserProfile | null;
   schools: School[];
@@ -11,7 +12,7 @@ type Props = {
   schoolSearch: string;
   setSchoolSearch: (v: string) => void;
   schoolSearchLoading: boolean;
-  loadSchools: (q: string) => void;
+  loadSchools: (q: string) => Promise<void>;
   radiusKm: number;
   setRadiusKm: (km: number) => void;
   sortBy: 'distance' | 'price-asc' | 'price-desc';
@@ -25,6 +26,7 @@ type Props = {
 };
 
 export function TopBar({
+  role,
   authUser, userProfile,
   schools, selectedSchoolId, setSelectedSchoolId,
   schoolSearch, setSchoolSearch, schoolSearchLoading, loadSchools,
@@ -49,53 +51,74 @@ export function TopBar({
         <div className="topbar-info">
           <span className="eyebrow">Live Workspace</span>
           <h1>UniStayScout</h1>
+          <p className="muted role-intent-copy">
+            {role === 'student' && 'Student Discovery Workspace'}
+            {role === 'landlord' && 'Landlord Portfolio Workspace'}
+            {role === 'admin' && 'Admin Moderation Workspace'}
+          </p>
         </div>
 
         <div className="topbar-controls">
-          <div className="school-search-group">
-            <input
-              className="tool-btn school-search-input"
-              placeholder="Search schools…"
-              value={schoolSearch}
-              onChange={(e) => setSchoolSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && loadSchools(schoolSearch)}
-            />
-            <button
-              type="button"
-              className="tool-btn"
-              disabled={schoolSearchLoading}
-              onClick={() => loadSchools(schoolSearch)}
-            >
-              {schoolSearchLoading ? '…' : '🔍'}
-            </button>
-          </div>
-          {schools.length > 0 && (
-            <label>
-              School
-              <select className="tool-btn" value={selectedSchoolId} onChange={(e) => setSelectedSchoolId(e.target.value)}>
-                {schools.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </label>
+          {role === 'student' && (
+            <>
+              <div className="school-search-group">
+                <input
+                  className="tool-btn school-search-input"
+                  placeholder="Search schools…"
+                  value={schoolSearch}
+                  onChange={(e) => setSchoolSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      void loadSchools(schoolSearch);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="tool-btn"
+                  disabled={schoolSearchLoading}
+                  onClick={() => {
+                    void loadSchools(schoolSearch);
+                  }}
+                >
+                  {schoolSearchLoading ? '…' : '🔍'}
+                </button>
+              </div>
+              {schools.length > 0 && (
+                <label>
+                  School
+                  <select className="tool-btn" value={selectedSchoolId} onChange={(e) => setSelectedSchoolId(e.target.value)}>
+                    {schools.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </label>
+              )}
+              <label>
+                Radius: {radiusKm}km
+                <input type="range" min={1} max={15} value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value))} />
+              </label>
+              <label>
+                Sort
+                <select className="tool-btn" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
+                  <option value="distance">Nearest first</option>
+                  <option value="price-asc">Cheapest first</option>
+                  <option value="price-desc">Most expensive first</option>
+                </select>
+              </label>
+              <label>
+                Map
+                <select className="tool-btn" value={mapTheme} onChange={(e) => setMapTheme(e.target.value as typeof mapTheme)}>
+                  <option value="street">Street</option>
+                  <option value="terrain">Terrain</option>
+                </select>
+              </label>
+            </>
           )}
-          <label>
-            Radius: {radiusKm}km
-            <input type="range" min={1} max={15} value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value))} />
-          </label>
-          <label>
-            Sort
-            <select className="tool-btn" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
-              <option value="distance">Nearest first</option>
-              <option value="price-asc">Cheapest first</option>
-              <option value="price-desc">Most expensive first</option>
-            </select>
-          </label>
-          <label>
-            Map
-            <select className="tool-btn" value={mapTheme} onChange={(e) => setMapTheme(e.target.value as typeof mapTheme)}>
-              <option value="street">Street</option>
-              <option value="terrain">Terrain</option>
-            </select>
-          </label>
+
+          {role !== 'student' && (
+            <div className="role-mode-pill">
+              {role === 'landlord' ? 'Portfolio and lead management mode' : 'Moderation and operations mode'}
+            </div>
+          )}
 
           {/* Avatar chip — opens profile modal */}
           <button type="button" className="avatar-chip" onClick={onOpenProfile} title="View / edit your profile">

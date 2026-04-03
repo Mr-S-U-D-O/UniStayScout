@@ -78,6 +78,27 @@ export type DashboardCard = {
   value: string;
 };
 
+export type LandlordInsights = {
+  activeListings: number;
+  pendingReview: number;
+  approvedListings: number;
+  rejectedListings: number;
+  unverifiedListings: number;
+  avgMonthlyPrice: number;
+  totalViews: number;
+  leadVolume: number;
+  conversionRatePct: number;
+};
+
+export type AdminInsights = {
+  pendingModeration: number;
+  totalListings: number;
+  studentLeads: number;
+  stalePendingCount: number;
+  recentLeads: number;
+  highPriorityQueue: number;
+};
+
 export type WizardStep = 'basics' | 'pricing' | 'amenities' | 'review';
 
 // ─── Rich Profile Types ────────────────────────────────────────────────────
