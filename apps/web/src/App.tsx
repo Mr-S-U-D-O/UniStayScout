@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Circle, MapContainer, Marker, Popup, TileLayer } from 'react-leaflet';
+import { Circle, MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -27,6 +27,8 @@ type Listing = {
   roomType: 'private' | 'shared';
   amenities: string[];
   photos: string[];
+  isVerified: boolean;
+  availableBeds: number;
   status: 'pending' | 'approved' | 'rejected';
   adminComment: string;
   distanceKm: number;
@@ -66,6 +68,11 @@ type AuthUser = {
   landlordId?: string;
 };
 
+type AuthSession = {
+  user: AuthUser;
+  token: string;
+};
+
 type DashboardCard = {
   label: string;
   value: string;
@@ -73,6 +80,7 @@ type DashboardCard = {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 const AUTH_STORAGE_KEY = 'unistayscout-auth-user';
+const AUTH_SESSION_KEY = 'unistayscout-auth-session';
 
 const defaultIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -92,18 +100,61 @@ const highlightedIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
-async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
+const amenityOptions = ['wifi', 'security', 'laundry', 'parking', 'backup-power'];
+
+function MapViewportController({
+  selectedSchool,
+  selectedListing,
+  listings
+}: {
+  selectedSchool?: School;
+  selectedListing: Listing | null;
+  listings: Listing[];
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (selectedListing) {
+      map.setView([selectedListing.latitude, selectedListing.longitude], Math.max(map.getZoom(), 14), {
+        animate: true
+      });
+      return;
+    }
+
+    if (listings.length > 0) {
+      const bounds = L.latLngBounds(listings.map((item) => [item.latitude, item.longitude] as [number, number]));
+      if (selectedSchool) {
+        bounds.extend([selectedSchool.latitude, selectedSchool.longitude]);
+      }
+      map.fitBounds(bounds, { padding: [35, 35], animate: true });
+      return;
+    }
+
+    if (selectedSchool) {
+      map.setView([selectedSchool.latitude, selectedSchool.longitude], 13, { animate: true });
+    }
+  }, [map, selectedListing, listings, selectedSchool]);
+
+  return null;
+}
+
+async function apiGet<T>(path: string, token?: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined
+  });
   if (!response.ok) {
     throw new Error(`Request failed: ${path}`);
   }
   return response.json() as Promise<T>;
 }
 
-async function apiPost<T>(path: string, body: unknown): Promise<T> {
+async function apiPost<T>(path: string, body: unknown, token?: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
     body: JSON.stringify(body)
   });
   if (!response.ok) {
@@ -115,6 +166,7 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
 
 function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authToken, setAuthToken] = useState('');
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
@@ -131,6 +183,13 @@ function App() {
   const [schools, setSchools] = useState<School[]>([]);
   const [selectedSchoolId, setSelectedSchoolId] = useState('uj-auckland-park');
   const [radiusKm, setRadiusKm] = useState(5);
+  const [minPrice, setMinPrice] = useState(0);
+  const [maxPrice, setMaxPrice] = useState(7000);
+  const [listingRoomTypeFilter, setListingRoomTypeFilter] = useState<'any' | 'private' | 'shared'>('any');
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<'distance' | 'price-asc' | 'price-desc'>('distance');
+  const [mapTheme, setMapTheme] = useState<'street' | 'terrain'>('street');
   const [listings, setListings] = useState<Listing[]>([]);
   const [selectedListingId, setSelectedListingId] = useState<string>('');
   const [recommendedIds, setRecommendedIds] = useState<string[]>([]);
@@ -175,6 +234,21 @@ function App() {
   );
 
   useEffect(() => {
+    const savedSession = localStorage.getItem(AUTH_SESSION_KEY);
+    if (savedSession) {
+      try {
+        const parsedSession = JSON.parse(savedSession) as AuthSession;
+        setAuthUser(parsedSession.user);
+        setAuthToken(parsedSession.token || '');
+        setStudentName(parsedSession.user.name || '');
+        setStudentPhone(parsedSession.user.phone || '');
+        setLandlordName(parsedSession.user.name || '');
+        return;
+      } catch {
+        localStorage.removeItem(AUTH_SESSION_KEY);
+      }
+    }
+
     const saved = localStorage.getItem(AUTH_STORAGE_KEY);
     if (!saved) {
       return;
@@ -198,14 +272,12 @@ function App() {
   }, []);
 
   async function loadDashboardSummary(): Promise<void> {
-    if (!authUser?.id) {
+    if (!authUser?.id || !authToken) {
       setDashboardCards([]);
       return;
     }
 
-    const response = await apiGet<{ data: { cards: DashboardCard[] } }>(
-      `/api/dashboard-summary?userId=${encodeURIComponent(authUser.id)}`
-    );
+    const response = await apiGet<{ data: { cards: DashboardCard[] } }>('/api/dashboard-summary', authToken);
     setDashboardCards(response.data.cards || []);
   }
 
@@ -220,10 +292,12 @@ function App() {
       });
 
       setAuthUser(response.data);
+      setAuthToken(response.token || '');
       setStudentName(response.data.name || '');
       setStudentPhone(response.data.phone || '');
       setLandlordName(response.data.name || '');
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(response.data));
+      localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ user: response.data, token: response.token }));
       setStatusMessage(`Welcome back, ${response.data.name}.`);
       setAuthForm((current) => ({ ...current, password: '' }));
     } catch (error) {
@@ -247,10 +321,12 @@ function App() {
       });
 
       setAuthUser(response.data);
+      setAuthToken(response.token || '');
       setStudentName(response.data.name || '');
       setStudentPhone(response.data.phone || '');
       setLandlordName(response.data.name || '');
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(response.data));
+      localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ user: response.data, token: response.token }));
       setStatusMessage(`Account created for ${response.data.role}.`);
       setAuthForm((current) => ({ ...current, password: '' }));
     } catch (error) {
@@ -262,15 +338,17 @@ function App() {
 
   function logout(): void {
     setAuthUser(null);
+    setAuthToken('');
     setDashboardCards([]);
     setListings([]);
     setSelectedListingId('');
     setAuthForm((current) => ({ ...current, password: '' }));
     localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(AUTH_SESSION_KEY);
   }
 
   async function loadListings(): Promise<void> {
-    if (!authUser) {
+    if (!authUser || !authToken) {
       setListings([]);
       return;
     }
@@ -278,23 +356,31 @@ function App() {
     const params = new URLSearchParams({
       schoolId: selectedSchoolId,
       radiusKm: String(radiusKm),
-      role
+      minPrice: String(minPrice),
+      maxPrice: String(maxPrice),
+      roomType: listingRoomTypeFilter,
+      verifiedOnly: String(verifiedOnly),
+      sortBy,
+      amenities: selectedAmenities.join(',')
     });
-    if (role === 'landlord') {
-      params.set('landlordId', landlordId);
-    }
 
-    const response = await apiGet<{ data: Listing[] }>(`/api/listings?${params.toString()}`);
+    const response = await apiGet<{ data: Listing[] }>(`/api/listings?${params.toString()}`, authToken);
     setListings(response.data);
     if (!selectedListingId && response.data.length > 0) {
       setSelectedListingId(response.data[0].id);
     }
   }
 
+  function toggleAmenity(amenity: string): void {
+    setSelectedAmenities((current) =>
+      current.includes(amenity) ? current.filter((item) => item !== amenity) : [...current, amenity]
+    );
+  }
+
   async function loadAdminData(): Promise<void> {
     const [pending, leadData] = await Promise.all([
-      apiGet<{ data: Listing[] }>('/api/admin/pending-listings'),
-      apiGet<{ data: Interest[] }>('/api/admin/interests')
+      apiGet<{ data: Listing[] }>('/api/admin/pending-listings', authToken),
+      apiGet<{ data: Interest[] }>('/api/admin/interests', authToken)
     ]);
     setPendingListings(pending.data);
     setInterests(leadData.data);
@@ -305,17 +391,17 @@ function App() {
       setLandlordListings([]);
       return;
     }
-    const response = await apiGet<{ data: Listing[] }>(`/api/landlords/${landlordId}/listings`);
+    const response = await apiGet<{ data: Listing[] }>(`/api/landlords/${landlordId}/listings`, authToken);
     setLandlordListings(response.data);
   }
 
   async function loadReviews(listingId: string): Promise<void> {
-    const response = await apiGet<{ data: Review[] }>(`/api/listings/${listingId}/reviews`);
+    const response = await apiGet<{ data: Review[] }>(`/api/listings/${listingId}/reviews`, authToken);
     setReviews(response.data);
   }
 
   async function refreshForRole(): Promise<void> {
-    if (!authUser) {
+    if (!authUser || !authToken) {
       return;
     }
 
@@ -353,7 +439,7 @@ function App() {
       return;
     }
     refreshForRole().catch(() => setStatusMessage('Data refresh failed.'));
-  }, [authUser, selectedSchoolId, radiusKm, role]);
+  }, [authUser, authToken, selectedSchoolId, radiusKm, minPrice, maxPrice, listingRoomTypeFilter, verifiedOnly, sortBy, selectedAmenities, role]);
 
   useEffect(() => {
     if (!selectedListingId) {
@@ -364,7 +450,7 @@ function App() {
   }, [selectedListingId]);
 
   useEffect(() => {
-    if (!authUser) {
+    if (!authUser || !authToken) {
       return;
     }
 
@@ -399,7 +485,7 @@ function App() {
     };
 
     return () => source.close();
-  }, [authUser, role, selectedListingId, selectedSchoolId, radiusKm]);
+  }, [authUser, authToken, role, selectedListingId, selectedSchoolId, radiusKm]);
 
   async function askAssistant(message: string): Promise<void> {
     const nextChat = [...chat, { role: 'user' as const, message }];
@@ -413,7 +499,7 @@ function App() {
       profile: { name: studentName, budget: studentBudget, roomType: studentRoomType },
       mapContext: { schoolId: selectedSchoolId, radiusKm },
       conversation: nextChat
-    });
+    }, authToken);
 
     setRecommendedIds(response.recommendedListingIds);
     setAiQuestions(response.questions);
@@ -425,17 +511,16 @@ function App() {
   }
 
   async function submitInterest(): Promise<void> {
-    if (!selectedListing || !authUser) {
+    if (!selectedListing || !authUser || !authToken) {
       return;
     }
 
     await apiPost('/api/interests', {
       listingId: selectedListing.id,
-      studentUserId: authUser.id,
       studentName,
       studentPhone,
       studentNote: `Interested in ${selectedListing.title}`
-    });
+    }, authToken);
     setStatusMessage('Interest submitted. Admin can now follow up with the landlord.');
   }
 
@@ -452,18 +537,17 @@ function App() {
       author,
       rating,
       comment
-    });
+    }, authToken);
     setStatusMessage('Review added.');
   }
 
   async function createListing(): Promise<void> {
-    if (!authUser || !landlordId) {
+    if (!authUser || !landlordId || !authToken) {
       setStatusMessage('Please login as a landlord to submit listings.');
       return;
     }
 
     await apiPost('/api/listings', {
-      landlordId,
       landlordName,
       schoolId: selectedSchoolId,
       title: newTitle,
@@ -476,7 +560,7 @@ function App() {
         .filter(Boolean),
       latitude: selectedSchool?.latitude ? selectedSchool.latitude + 0.01 : -26.18,
       longitude: selectedSchool?.longitude ? selectedSchool.longitude + 0.01 : 27.99
-    });
+    }, authToken);
 
     setNewTitle('');
     setNewDescription('');
@@ -486,7 +570,7 @@ function App() {
   }
 
   async function reviewListing(id: string, decision: 'approved' | 'rejected', comment: string): Promise<void> {
-    await apiPost(`/api/admin/listings/${id}/review`, { decision, comment });
+    await apiPost(`/api/admin/listings/${id}/review`, { decision, comment }, authToken);
     setStatusMessage(`Listing ${decision}.`);
     await loadAdminData();
     await refreshForRole();
@@ -635,6 +719,21 @@ function App() {
               onChange={(event) => setRadiusKm(Number(event.target.value))}
             />
           </label>
+          <label>
+            Sort
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as 'distance' | 'price-asc' | 'price-desc')}>
+              <option value="distance">Nearest first</option>
+              <option value="price-asc">Cheapest first</option>
+              <option value="price-desc">Most expensive first</option>
+            </select>
+          </label>
+          <label>
+            Map Theme
+            <select value={mapTheme} onChange={(event) => setMapTheme(event.target.value as 'street' | 'terrain')}>
+              <option value="street">Street</option>
+              <option value="terrain">Terrain</option>
+            </select>
+          </label>
           <button type="button" className="danger" onClick={logout}>
             Logout
           </button>
@@ -690,6 +789,48 @@ function App() {
                   </select>
                 </label>
               </div>
+
+              <section className="filter-box">
+                <h3>Map Filters</h3>
+                <div className="filter-grid">
+                  <label>
+                    Min price (ZAR)
+                    <input type="number" value={minPrice} onChange={(event) => setMinPrice(Number(event.target.value) || 0)} />
+                  </label>
+                  <label>
+                    Max price (ZAR)
+                    <input type="number" value={maxPrice} onChange={(event) => setMaxPrice(Number(event.target.value) || 0)} />
+                  </label>
+                  <label>
+                    Room filter
+                    <select
+                      value={listingRoomTypeFilter}
+                      onChange={(event) => setListingRoomTypeFilter(event.target.value as 'any' | 'private' | 'shared')}
+                    >
+                      <option value="any">Any</option>
+                      <option value="private">Private only</option>
+                      <option value="shared">Shared only</option>
+                    </select>
+                  </label>
+                  <label className="check-line">
+                    <input type="checkbox" checked={verifiedOnly} onChange={(event) => setVerifiedOnly(event.target.checked)} />
+                    Verified listings only
+                  </label>
+                </div>
+
+                <div className="amenity-chips">
+                  {amenityOptions.map((amenity) => (
+                    <button
+                      key={amenity}
+                      type="button"
+                      className={selectedAmenities.includes(amenity) ? 'chip active' : 'chip'}
+                      onClick={() => toggleAmenity(amenity)}
+                    >
+                      {amenity}
+                    </button>
+                  ))}
+                </div>
+              </section>
 
               <div className="chat-box">
                 {chat.map((item, index) => (
@@ -853,8 +994,14 @@ function App() {
             >
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                url={
+                  mapTheme === 'street'
+                    ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+                    : 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'
+                }
               />
+
+              <MapViewportController selectedSchool={selectedSchool} selectedListing={selectedListing} listings={listings} />
 
               <Circle
                 center={[selectedSchool.latitude, selectedSchool.longitude]}
@@ -892,6 +1039,8 @@ function App() {
                 <span className="meta-pill">{selectedListing.roomType}</span>
                 <span className="meta-pill">{selectedListing.distanceKm?.toFixed(1)} km</span>
                 <span className="meta-pill">{selectedListing.views} views</span>
+                <span className="meta-pill">{selectedListing.availableBeds} beds</span>
+                {selectedListing.isVerified && <span className="meta-pill verified">Verified</span>}
               </div>
               <p>
                 <strong>

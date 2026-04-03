@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import type { Response } from 'express';
+import crypto from 'crypto';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -31,6 +32,8 @@ type Listing = {
   roomType: 'private' | 'shared';
   amenities: string[];
   photos: string[];
+  isVerified: boolean;
+  availableBeds: number;
   status: ListingStatus;
   adminComment: string;
   createdAt: string;
@@ -81,6 +84,11 @@ type Account = {
   createdAt: string;
 };
 
+type AuthContext = {
+  account: Account;
+  role: AccountRole;
+};
+
 const schools: School[] = [
   {
     id: 'uj-auckland-park',
@@ -113,6 +121,8 @@ const listings: Listing[] = [
     roomType: 'private',
     amenities: ['wifi', 'laundry', 'security'],
     photos: ['https://picsum.photos/seed/unistay1/640/420'],
+    isVerified: true,
+    availableBeds: 2,
     status: 'approved',
     adminComment: '',
     createdAt: new Date().toISOString(),
@@ -133,11 +143,101 @@ const listings: Listing[] = [
     roomType: 'shared',
     amenities: ['wifi', 'backup-power', 'parking'],
     photos: ['https://picsum.photos/seed/unistay2/640/420'],
+    isVerified: false,
+    availableBeds: 4,
     status: 'pending',
     adminComment: 'Please upload at least 3 interior photos.',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     views: 8
+  },
+  {
+    id: 'lst-3',
+    landlordId: 'landlord-3',
+    landlordName: 'Braam Student Homes',
+    title: 'Braamfontein Studio Pods',
+    description: 'Compact private pods with quiet floors and controlled access.',
+    schoolId: 'wits-braamfontein',
+    latitude: -26.1937,
+    longitude: 28.0279,
+    price: 5300,
+    currency: 'ZAR',
+    roomType: 'private',
+    amenities: ['wifi', 'security', 'laundry', 'backup-power'],
+    photos: ['https://picsum.photos/seed/unistay3/640/420'],
+    isVerified: true,
+    availableBeds: 3,
+    status: 'approved',
+    adminComment: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    views: 37
+  },
+  {
+    id: 'lst-4',
+    landlordId: 'landlord-1',
+    landlordName: 'Bright Rooms SA',
+    title: 'Auckland Women-Only Shared Flat',
+    description: 'Secure shared flat with biometric access and walkable campus route.',
+    schoolId: 'uj-auckland-park',
+    latitude: -26.1844,
+    longitude: 28.0036,
+    price: 3600,
+    currency: 'ZAR',
+    roomType: 'shared',
+    amenities: ['wifi', 'security', 'parking'],
+    photos: ['https://picsum.photos/seed/unistay4/640/420'],
+    isVerified: true,
+    availableBeds: 5,
+    status: 'approved',
+    adminComment: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    views: 19
+  },
+  {
+    id: 'lst-5',
+    landlordId: 'landlord-4',
+    landlordName: 'Metro Student Rentals',
+    title: 'Wits Shared Loft Block',
+    description: 'Shared lofts with study lounge and 24/7 concierge.',
+    schoolId: 'wits-braamfontein',
+    latitude: -26.1912,
+    longitude: 28.0338,
+    price: 4100,
+    currency: 'ZAR',
+    roomType: 'shared',
+    amenities: ['wifi', 'laundry', 'security'],
+    photos: ['https://picsum.photos/seed/unistay5/640/420'],
+    isVerified: false,
+    availableBeds: 6,
+    status: 'approved',
+    adminComment: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    views: 11
+  },
+  {
+    id: 'lst-6',
+    landlordId: 'landlord-2',
+    landlordName: 'Campus Living Hub',
+    title: 'Melville Premium Private Room',
+    description: 'Premium private room with ensuite, fast wifi, and cleaning service.',
+    schoolId: 'uj-auckland-park',
+    latitude: -26.1789,
+    longitude: 28.0047,
+    price: 6200,
+    currency: 'ZAR',
+    roomType: 'private',
+    amenities: ['wifi', 'laundry', 'security', 'backup-power', 'parking'],
+    photos: ['https://picsum.photos/seed/unistay6/640/420'],
+    isVerified: true,
+    availableBeds: 1,
+    status: 'approved',
+    adminComment: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    views: 42
   }
 ];
 
@@ -176,6 +276,8 @@ const accounts: Account[] = [
 ];
 
 const sseClients = new Set<Response>();
+const tokenSecret = process.env.AUTH_TOKEN_SECRET || 'unistayscout-dev-secret';
+const tokenTtlSeconds = 60 * 60 * 12;
 
 function nextId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -215,6 +317,95 @@ function toPublicAccount(account: Account) {
     role: account.role,
     landlordId: account.landlordId
   };
+}
+
+function base64UrlEncode(value: string): string {
+  return Buffer.from(value, 'utf8').toString('base64url');
+}
+
+function base64UrlDecode(value: string): string {
+  return Buffer.from(value, 'base64url').toString('utf8');
+}
+
+function sign(value: string): string {
+  return crypto.createHmac('sha256', tokenSecret).update(value).digest('base64url');
+}
+
+function createAccessToken(account: Account): string {
+  const payload = JSON.stringify({
+    userId: account.id,
+    role: account.role,
+    exp: Math.floor(Date.now() / 1000) + tokenTtlSeconds
+  });
+  const encodedPayload = base64UrlEncode(payload);
+  const signature = sign(encodedPayload);
+  return `${encodedPayload}.${signature}`;
+}
+
+function readAuthContext(req: express.Request): AuthContext | null {
+  const authHeader = req.header('authorization') || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.slice('Bearer '.length).trim();
+  const [encodedPayload, signature] = token.split('.');
+  if (!encodedPayload || !signature) {
+    return null;
+  }
+
+  const expectedSignature = sign(encodedPayload);
+  if (expectedSignature !== signature) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as {
+      userId: string;
+      role: AccountRole;
+      exp: number;
+    };
+
+    if (!payload.userId || !payload.role || !payload.exp) {
+      return null;
+    }
+    if (payload.exp < Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+
+    const account = accounts.find((item) => item.id === payload.userId && item.role === payload.role);
+    if (!account) {
+      return null;
+    }
+
+    return {
+      account,
+      role: account.role
+    };
+  } catch {
+    return null;
+  }
+}
+
+function requireAuth(req: express.Request, res: express.Response): AuthContext | null {
+  const auth = readAuthContext(req);
+  if (!auth) {
+    res.status(401).json({ message: 'Authentication required.' });
+    return null;
+  }
+  return auth;
+}
+
+function requireRole(
+  auth: AuthContext,
+  allowedRoles: AccountRole[],
+  res: express.Response
+): auth is AuthContext {
+  if (allowedRoles.includes(auth.role)) {
+    return true;
+  }
+  res.status(403).json({ message: 'You are not allowed to perform this action.' });
+  return false;
 }
 
 app.use(cors());
@@ -295,7 +486,7 @@ app.post('/api/auth/register', (req, res) => {
 
   res.status(201).json({
     data: toPublicAccount(account),
-    token: nextId('token')
+    token: createAccessToken(account)
   });
 });
 
@@ -314,18 +505,16 @@ app.post('/api/auth/login', (req, res) => {
 
   res.json({
     data: toPublicAccount(account),
-    token: nextId('token')
+    token: createAccessToken(account)
   });
 });
 
 app.get('/api/dashboard-summary', (req, res) => {
-  const userId = String(req.query.userId || '');
-  const account = accounts.find((item) => item.id === userId);
-
-  if (!account) {
-    res.status(404).json({ message: 'Account not found.' });
+  const auth = requireAuth(req, res);
+  if (!auth) {
     return;
   }
+  const { account } = auth;
 
   if (account.role === 'student') {
     const myInterests = interests.filter((item) => item.studentUserId === account.id);
@@ -370,10 +559,24 @@ app.get('/api/dashboard-summary', (req, res) => {
 });
 
 app.get('/api/listings', (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
   const schoolId = String(req.query.schoolId || '');
   const radiusKm = Number(req.query.radiusKm || 5);
-  const role = String(req.query.role || 'student') as UserRole;
-  const landlordId = String(req.query.landlordId || '');
+  const minPrice = Number(req.query.minPrice || 0);
+  const maxPrice = Number(req.query.maxPrice || 999999);
+  const roomTypeFilter = String(req.query.roomType || 'any');
+  const verifiedOnly = String(req.query.verifiedOnly || 'false') === 'true';
+  const sortBy = String(req.query.sortBy || 'distance');
+  const amenityCsv = String(req.query.amenities || '');
+  const requiredAmenities = amenityCsv
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const role = auth.role as UserRole;
+  const landlordId = auth.account.landlordId || '';
 
   const school = schools.find((item) => item.id === schoolId) || schools[0];
 
@@ -389,6 +592,12 @@ app.get('/api/listings', (req, res) => {
 
   const mapped = visibleListings
     .filter((item) => item.schoolId === school.id)
+    .filter((item) => item.price >= minPrice && item.price <= maxPrice)
+    .filter((item) => (roomTypeFilter === 'any' ? true : item.roomType === roomTypeFilter))
+    .filter((item) => (verifiedOnly ? item.isVerified : true))
+    .filter((item) =>
+      requiredAmenities.length === 0 ? true : requiredAmenities.every((amenity) => item.amenities.includes(amenity))
+    )
     .map((item) => {
       const computedDistance = distanceKm(school.latitude, school.longitude, item.latitude, item.longitude);
       return {
@@ -397,23 +606,44 @@ app.get('/api/listings', (req, res) => {
       };
     })
     .filter((item) => item.distanceKm <= radiusKm)
-    .sort((a, b) => a.distanceKm - b.distanceKm);
+    .sort((a, b) => {
+      if (sortBy === 'price-asc') {
+        return a.price - b.price;
+      }
+      if (sortBy === 'price-desc') {
+        return b.price - a.price;
+      }
+      return a.distanceKm - b.distanceKm;
+    });
 
   res.json({ data: mapped, total: mapped.length, school });
 });
 
 app.post('/api/listings', (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+  if (!requireRole(auth, ['landlord'], res)) {
+    return;
+  }
+
   const payload = req.body as Partial<Listing>;
-  if (!payload.title || !payload.schoolId || !payload.landlordId || payload.price == null) {
-    res.status(400).json({ message: 'title, schoolId, landlordId, and price are required.' });
+  if (!payload.title || !payload.schoolId || payload.price == null) {
+    res.status(400).json({ message: 'title, schoolId, and price are required.' });
+    return;
+  }
+
+  if (!auth.account.landlordId) {
+    res.status(400).json({ message: 'Landlord profile is incomplete.' });
     return;
   }
 
   const now = new Date().toISOString();
   const listing: Listing = {
     id: nextId('lst'),
-    landlordId: payload.landlordId,
-    landlordName: payload.landlordName || 'Landlord',
+    landlordId: auth.account.landlordId,
+    landlordName: auth.account.name || payload.landlordName || 'Landlord',
     title: payload.title,
     description: payload.description || 'Description pending update.',
     schoolId: payload.schoolId,
@@ -424,6 +654,8 @@ app.post('/api/listings', (req, res) => {
     roomType: payload.roomType === 'shared' ? 'shared' : 'private',
     amenities: payload.amenities || [],
     photos: payload.photos || ['https://picsum.photos/seed/unistay-new/640/420'],
+    isVerified: false,
+    availableBeds: 1,
     status: 'pending',
     adminComment: 'Awaiting admin review.',
     createdAt: now,
@@ -437,11 +669,27 @@ app.post('/api/listings', (req, res) => {
 });
 
 app.get('/api/admin/pending-listings', (_req, res) => {
+  const auth = requireAuth(_req, res);
+  if (!auth) {
+    return;
+  }
+  if (!requireRole(auth, ['admin'], res)) {
+    return;
+  }
+
   const data = listings.filter((item) => item.status === 'pending');
   res.json({ data });
 });
 
 app.post('/api/admin/listings/:id/review', (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+  if (!requireRole(auth, ['admin'], res)) {
+    return;
+  }
+
   const id = req.params.id;
   const { decision, comment } = req.body as { decision: 'approved' | 'rejected'; comment?: string };
   const listing = listings.find((item) => item.id === id);
@@ -464,13 +712,31 @@ app.post('/api/admin/listings/:id/review', (req, res) => {
 });
 
 app.get('/api/landlords/:landlordId/listings', (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+
   const landlordId = req.params.landlordId;
+  if (auth.role !== 'admin' && auth.account.landlordId !== landlordId) {
+    res.status(403).json({ message: 'You can only view your own landlord listings.' });
+    return;
+  }
+
   const data = listings.filter((item) => item.landlordId === landlordId);
   res.json({ data });
 });
 
 app.post('/api/interests', (req, res) => {
-  const { listingId, studentUserId, studentName, studentPhone, studentNote } = req.body as Partial<Interest>;
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+  if (!requireRole(auth, ['student'], res)) {
+    return;
+  }
+
+  const { listingId, studentName, studentPhone, studentNote } = req.body as Partial<Interest>;
   if (!listingId || !studentName || !studentPhone) {
     res.status(400).json({ message: 'listingId, studentName and studentPhone are required.' });
     return;
@@ -485,7 +751,7 @@ app.post('/api/interests', (req, res) => {
   const interest: Interest = {
     id: nextId('int'),
     listingId,
-    studentUserId,
+    studentUserId: auth.account.id,
     studentName,
     studentPhone,
     studentNote: studentNote || '',
@@ -498,6 +764,14 @@ app.post('/api/interests', (req, res) => {
 });
 
 app.get('/api/admin/interests', (_req, res) => {
+  const auth = requireAuth(_req, res);
+  if (!auth) {
+    return;
+  }
+  if (!requireRole(auth, ['admin'], res)) {
+    return;
+  }
+
   const data = interests
     .map((item) => ({
       ...item,
@@ -515,6 +789,14 @@ app.get('/api/listings/:id/reviews', (req, res) => {
 });
 
 app.post('/api/listings/:id/reviews', (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+  if (!requireRole(auth, ['student'], res)) {
+    return;
+  }
+
   const listingId = req.params.id;
   const { author, rating, comment } = req.body as Partial<Review>;
 

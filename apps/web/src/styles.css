@@ -84,9 +84,9 @@ h3 {
 
 .topbar-controls {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
   gap: 0.75rem;
-  width: min(760px, 100%);
+  width: min(980px, 100%);
   align-items: end;
 }
 
@@ -268,6 +268,53 @@ textarea:focus {
   gap: 0.55rem;
 }
 
+.filter-box {
+  margin-top: 0.75rem;
+  border: 1px solid #d3e4f5;
+  border-radius: 12px;
+  background: #f7fbff;
+  padding: 0.7rem;
+}
+
+.filter-box h3 {
+  margin-bottom: 0.5rem;
+}
+
+.filter-grid {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 600;
+}
+
+.amenity-chips {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chip {
+  background: #e9f3ff;
+  color: #1f4f79;
+  border: 1px solid #bfd9f3;
+  padding: 0.28rem 0.62rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.chip.active {
+  background: #0f5ca7;
+  color: #fff;
+  border-color: #0f5ca7;
+}
+
 .chat-box {
   margin-top: 0.7rem;
   border: 1px solid #c7dcf2;
@@ -365,6 +412,12 @@ textarea:focus {
   font-size: 0.75rem;
   padding: 0.26rem 0.6rem;
   font-weight: 700;
+}
+
+.meta-pill.verified {
+  background: #e8f7ee;
+  color: #1c6a44;
+  border-color: #bde6cf;
 }
 
 .review-form {
