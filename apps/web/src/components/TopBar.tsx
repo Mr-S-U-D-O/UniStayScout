@@ -1,16 +1,17 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { AuthUser, School, DashboardCard } from '../types';
+import { AuthUser, School, DashboardCard, UserProfile, StudentProfile } from '../types';
 
 type Props = {
   authUser: AuthUser;
+  userProfile: UserProfile | null;
   schools: School[];
   selectedSchoolId: string;
   setSelectedSchoolId: (id: string) => void;
   schoolSearch: string;
-  setSchoolSearch: (value: string) => void;
+  setSchoolSearch: (v: string) => void;
   schoolSearchLoading: boolean;
-  loadSchools: (query?: string) => Promise<void>;
+  loadSchools: (q: string) => void;
   radiusKm: number;
   setRadiusKm: (km: number) => void;
   sortBy: 'distance' | 'price-asc' | 'price-desc';
@@ -19,28 +20,24 @@ type Props = {
   setMapTheme: (t: 'street' | 'terrain') => void;
   dashboardCards: DashboardCard[];
   statusMessage: string;
+  onOpenProfile: () => void;
   logout: () => void;
 };
 
 export function TopBar({
-  authUser,
-  schools,
-  selectedSchoolId,
-  setSelectedSchoolId,
-  schoolSearch,
-  setSchoolSearch,
-  schoolSearchLoading,
-  loadSchools,
-  radiusKm,
-  setRadiusKm,
-  sortBy,
-  setSortBy,
-  mapTheme,
-  setMapTheme,
-  dashboardCards,
-  statusMessage,
-  logout
+  authUser, userProfile,
+  schools, selectedSchoolId, setSelectedSchoolId,
+  schoolSearch, setSchoolSearch, schoolSearchLoading, loadSchools,
+  radiusKm, setRadiusKm,
+  sortBy, setSortBy,
+  mapTheme, setMapTheme,
+  dashboardCards, statusMessage,
+  onOpenProfile, logout,
 }: Props) {
+
+  const avatarUrl = userProfile?.avatarUrl || '';
+  const completeness = userProfile ? calcCompleteness(userProfile) : 0;
+
   return (
     <>
       <motion.header
@@ -52,39 +49,34 @@ export function TopBar({
         <div className="topbar-info">
           <span className="eyebrow">Live Workspace</span>
           <h1>UniStayScout</h1>
-          <div className="user-badge">
-            <span className="role-tag">{authUser.role}</span>
-            {authUser.name}
-          </div>
         </div>
+
         <div className="topbar-controls">
-          <form
-            className="school-search-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              loadSchools(schoolSearch).catch(() => undefined);
-            }}
-          >
-            <label>
-              Find school
-              <input
-                value={schoolSearch}
-                onChange={(e) => setSchoolSearch(e.target.value)}
-                placeholder="Search real schools or campuses"
-              />
-            </label>
-            <button type="submit" className="tool-btn" disabled={schoolSearchLoading}>
-              {schoolSearchLoading ? 'Searching...' : 'Search'}
+          <div className="school-search-group">
+            <input
+              className="tool-btn school-search-input"
+              placeholder="Search schools…"
+              value={schoolSearch}
+              onChange={(e) => setSchoolSearch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && loadSchools(schoolSearch)}
+            />
+            <button
+              type="button"
+              className="tool-btn"
+              disabled={schoolSearchLoading}
+              onClick={() => loadSchools(schoolSearch)}
+            >
+              {schoolSearchLoading ? '…' : '🔍'}
             </button>
-          </form>
-          <label>
-            School
-            <select className="tool-btn" value={selectedSchoolId} onChange={(e) => setSelectedSchoolId(e.target.value)}>
-              {schools.map((school) => (
-                <option key={school.id} value={school.id}>{school.name}</option>
-              ))}
-            </select>
-          </label>
+          </div>
+          {schools.length > 0 && (
+            <label>
+              School
+              <select className="tool-btn" value={selectedSchoolId} onChange={(e) => setSelectedSchoolId(e.target.value)}>
+                {schools.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </label>
+          )}
           <label>
             Radius: {radiusKm}km
             <input type="range" min={1} max={15} value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value))} />
@@ -98,12 +90,27 @@ export function TopBar({
             </select>
           </label>
           <label>
-            Map Theme
+            Map
             <select className="tool-btn" value={mapTheme} onChange={(e) => setMapTheme(e.target.value as typeof mapTheme)}>
               <option value="street">Street</option>
               <option value="terrain">Terrain</option>
             </select>
           </label>
+
+          {/* Avatar chip — opens profile modal */}
+          <button type="button" className="avatar-chip" onClick={onOpenProfile} title="View / edit your profile">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={authUser.name} className="avatar-chip-img" />
+            ) : (
+              <div className="avatar-chip-fallback">{authUser.name.charAt(0).toUpperCase()}</div>
+            )}
+            <span className="avatar-chip-name">{authUser.name.split(' ')[0]}</span>
+            <span className="role-tag">{authUser.role}</span>
+            {completeness < 70 && (
+              <span className="completeness-warning" title={`Profile ${completeness}% complete`}>!</span>
+            )}
+          </button>
+
           <button type="button" className="danger outline" onClick={logout}>Logout</button>
         </div>
       </motion.header>
@@ -136,4 +143,13 @@ export function TopBar({
       )}
     </>
   );
+}
+
+function calcCompleteness(profile: UserProfile): number {
+  if (profile.role === 'student') {
+    const s = profile as StudentProfile;
+    const checks = [s.avatarUrl, s.bio, s.university, s.lifestyle.length > 0, s.preferredAmenities.length > 0];
+    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+  }
+  return 100;
 }
