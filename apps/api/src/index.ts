@@ -1495,6 +1495,9 @@ app.get('/api/admin/insights', (req, res) => {
   const stalePendingCount = pending.filter((item) => now - new Date(item.updatedAt).getTime() > oneDayMs).length;
   const recentLeads = interests.filter((item) => now - new Date(item.createdAt).getTime() <= oneDayMs).length;
   const unverifiedPending = pending.filter((item) => !item.isVerified).length;
+  const totalAdmins = accounts.filter((account) => account.role === 'admin').length;
+  const totalLandlords = accounts.filter((account) => account.role === 'landlord').length;
+  const totalStudents = accounts.filter((account) => account.role === 'student').length;
 
   res.json({
     data: {
@@ -1503,7 +1506,12 @@ app.get('/api/admin/insights', (req, res) => {
       studentLeads: interests.length,
       stalePendingCount,
       recentLeads,
-      highPriorityQueue: unverifiedPending
+      highPriorityQueue: unverifiedPending,
+      totalAdmins,
+      totalLandlords,
+      totalStudents,
+      adminSelectionPolicy: 'manual-provisioning-only',
+      adminSelfRegistrationEnabled: false
     }
   });
 });

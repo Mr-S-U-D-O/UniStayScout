@@ -519,7 +519,7 @@ function App() {
         logout={logout}
       />
 
-      <section className="workspace-grid">
+      <section className={role === 'admin' ? 'workspace-grid admin-workspace-grid' : 'workspace-grid'}>
         <aside className="left-sidebar">
           {role === 'student' && (
             <AIAssistant
@@ -552,6 +552,7 @@ function App() {
             <AdminPanel
               pendingListings={pendingListings}
               interests={interests}
+              adminInsights={adminInsights}
               reviewListing={reviewListing}
             />
           )}
@@ -661,52 +662,6 @@ function App() {
           </aside>
         )}
 
-        {role === 'admin' && (
-          <aside className="role-intent-pane">
-            <section className="section-card">
-              <div className="section-head">
-                <h2>Operations Snapshot</h2>
-                <p className="muted">Moderation throughput and lead workload.</p>
-              </div>
-              <div className="intent-grid">
-                <article className="intent-metric">
-                  <span className="muted">Pending moderation</span>
-                  <strong>{adminInsights?.pendingModeration ?? pendingListings.length}</strong>
-                </article>
-                <article className="intent-metric">
-                  <span className="muted">Student leads</span>
-                  <strong>{adminInsights?.studentLeads ?? interests.length}</strong>
-                </article>
-                <article className="intent-metric">
-                  <span className="muted">High priority queue</span>
-                  <strong>{adminInsights?.highPriorityQueue ?? pendingListings.filter((item) => item.isVerified === false).length}</strong>
-                </article>
-                <article className="intent-metric">
-                  <span className="muted">Needs review now</span>
-                  <strong>{adminInsights?.stalePendingCount ?? Math.min(pendingListings.length, 8)}</strong>
-                </article>
-              </div>
-            </section>
-
-            <section className="section-card">
-              <div className="section-head">
-                <h3>Admin Intent</h3>
-                <p className="muted">Moderate, secure, and unblock supply.</p>
-              </div>
-              <div className="stack-list">
-                <article className="stack-card">
-                  <p>Focus on queue quality: approve valid listings, reject incomplete ones with clear reason.</p>
-                </article>
-                <article className="stack-card">
-                  <p>Monitor lead volume: <strong>{adminInsights?.recentLeads ?? 0}</strong> new leads in the last 24h.</p>
-                </article>
-                <article className="stack-card">
-                  <p>This role is operations-first and moderation-first, not discovery search.</p>
-                </article>
-              </div>
-            </section>
-          </aside>
-        )}
       </section>
     </main>
   );

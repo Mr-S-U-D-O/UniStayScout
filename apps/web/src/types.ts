@@ -97,6 +97,11 @@ export type AdminInsights = {
   stalePendingCount: number;
   recentLeads: number;
   highPriorityQueue: number;
+  totalAdmins: number;
+  totalLandlords: number;
+  totalStudents: number;
+  adminSelectionPolicy: string;
+  adminSelfRegistrationEnabled: boolean;
 };
 
 export type WizardStep = 'basics' | 'pricing' | 'amenities' | 'review';
