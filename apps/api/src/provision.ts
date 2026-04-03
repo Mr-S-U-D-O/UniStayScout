@@ -16,6 +16,7 @@ type ProvisionAccount = {
   landlordId?: string;
   password?: string;
   passwordHash?: string;
+  isSuperUser?: boolean;
   createdAt?: string;
 };
 
@@ -134,8 +135,8 @@ async function importAccounts(pool: Pool, accounts: ProvisionAccount[] = []): Pr
 
     await pool.query(
       `
-        INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (id)
         DO UPDATE SET
           name = EXCLUDED.name,
@@ -143,7 +144,8 @@ async function importAccounts(pool: Pool, accounts: ProvisionAccount[] = []): Pr
           phone = EXCLUDED.phone,
           password_hash = EXCLUDED.password_hash,
           role = EXCLUDED.role,
-          landlord_id = EXCLUDED.landlord_id;
+          landlord_id = EXCLUDED.landlord_id,
+          is_super_user = EXCLUDED.is_super_user;
       `,
       [
         id,
@@ -153,6 +155,7 @@ async function importAccounts(pool: Pool, accounts: ProvisionAccount[] = []): Pr
         passwordHash,
         account.role,
         account.landlordId || null,
+        account.isSuperUser || false,
         createdAt
       ]
     );

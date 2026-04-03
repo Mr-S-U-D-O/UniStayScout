@@ -8,8 +8,12 @@ CREATE TABLE IF NOT EXISTS accounts (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('student', 'landlord', 'admin')),
   landlord_id TEXT,
+  is_super_user BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE accounts
+ADD COLUMN IF NOT EXISTS is_super_user BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_accounts_email
 ON accounts (email);

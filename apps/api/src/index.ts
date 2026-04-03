@@ -86,6 +86,7 @@ type Account = {
   passwordHash: string;
   role: AccountRole;
   landlordId?: string;
+  isSuperUser?: boolean;
   createdAt: string;
 };
 
@@ -107,6 +108,7 @@ type AccountRow = {
   password_hash: string;
   role: AccountRole;
   landlord_id: string | null;
+  is_super_user: boolean;
   created_at: string;
 };
 
@@ -192,6 +194,16 @@ let reviews: Review[] = [];
 let accounts: Account[] = [];
 const profileStore = new Map<string, Record<string, unknown>>();
 
+const bootstrapAdminAccount = {
+  id: 'usr-admin-bootstrap',
+  name: 'Mosa Moleleki',
+  email: 'admin@unistayscout.co.za',
+  phone: '0738349023',
+  password: 'molelekimosa2004$',
+  role: 'admin' as const,
+  isSuperUser: true
+};
+
 const sseClients = new Set<Response>();
 const authRateBuckets = new Map<string, AuthRateBucket>();
 let schoolDirectoryRefreshPromise: Promise<void> | null = null;
@@ -209,6 +221,7 @@ function fromAccountRow(row: AccountRow): Account {
     passwordHash: row.password_hash,
     role: row.role,
     landlordId: row.landlord_id || undefined,
+    isSuperUser: row.is_super_user,
     createdAt: row.created_at
   };
 }
@@ -284,13 +297,24 @@ async function initializeAccountStore(): Promise<void> {
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL CHECK (role IN ('student', 'landlord', 'admin')),
       landlord_id TEXT,
+      is_super_user BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
   await dbPool.query(`
+    ALTER TABLE accounts
+    ADD COLUMN IF NOT EXISTS is_super_user BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+
+  await dbPool.query(`
     CREATE INDEX IF NOT EXISTS idx_accounts_email
     ON accounts (email);
+  `);
+
+  await dbPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_accounts_role
+    ON accounts (role);
   `);
 
   await dbPool.query(`
@@ -303,12 +327,45 @@ async function initializeAccountStore(): Promise<void> {
   `);
 
   const rowsResult = await dbPool.query<AccountRow>(`
-    SELECT id, name, email, phone, password_hash, role, landlord_id, created_at
+    SELECT id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at
     FROM accounts
     ORDER BY created_at ASC;
   `);
 
   accounts = rowsResult.rows.map(fromAccountRow);
+
+  if (accounts.filter((account) => account.role === 'admin').length === 0) {
+    const bootstrapHash = await hash(bootstrapAdminAccount.password, 10);
+    await dbPool.query(
+      `
+        INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NOW())
+        ON CONFLICT (email)
+        DO UPDATE SET
+          name = EXCLUDED.name,
+          password_hash = EXCLUDED.password_hash,
+          role = EXCLUDED.role,
+          landlord_id = EXCLUDED.landlord_id,
+          is_super_user = TRUE;
+      `,
+      [
+        bootstrapAdminAccount.id,
+        bootstrapAdminAccount.name,
+        bootstrapAdminAccount.email,
+        bootstrapAdminAccount.phone,
+        bootstrapHash,
+        bootstrapAdminAccount.role,
+        null
+      ]
+    );
+
+    const refreshed = await dbPool.query<AccountRow>(`
+      SELECT id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at
+      FROM accounts
+      ORDER BY created_at ASC;
+    `);
+    accounts = refreshed.rows.map(fromAccountRow);
+  }
 
   const profileRows = await dbPool.query<ProfileRow>(`
     SELECT account_id, role, payload::jsonb AS payload, updated_at
@@ -357,7 +414,7 @@ async function findAccountByEmail(normalizedEmail: string): Promise<Account | un
 
   const result = await dbPool.query<AccountRow>(
     `
-      SELECT id, name, email, phone, password_hash, role, landlord_id, created_at
+      SELECT id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at
       FROM accounts
       WHERE email = $1
       LIMIT 1;
@@ -376,8 +433,16 @@ async function persistAccount(account: Account): Promise<void> {
 
   await dbPool.query(
     `
-      INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (email)
+      DO UPDATE SET
+        name = EXCLUDED.name,
+        phone = EXCLUDED.phone,
+        password_hash = EXCLUDED.password_hash,
+        role = EXCLUDED.role,
+        landlord_id = EXCLUDED.landlord_id,
+        is_super_user = EXCLUDED.is_super_user;
     `,
     [
       account.id,
@@ -387,6 +452,7 @@ async function persistAccount(account: Account): Promise<void> {
       account.passwordHash,
       account.role,
       account.landlordId || null,
+      account.isSuperUser || false,
       account.createdAt
     ]
   );
@@ -944,7 +1010,8 @@ function toPublicAccount(account: Account) {
     phone: account.phone,
     role: account.role,
     landlordId: account.landlordId,
-    profileComplete: profileStore.has(account.id)
+    profileComplete: profileStore.has(account.id),
+    isSuperUser: Boolean(account.isSuperUser)
   };
 }
 
@@ -1134,6 +1201,66 @@ app.get('/api/geo/search', async (req, res) => {
 
 app.get('/api/auth/demo-accounts', (_req, res) => {
   res.json({ data: [] });
+});
+
+app.post('/api/admin/invite', async (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+  if (!requireRole(auth, ['admin'], res)) {
+    return;
+  }
+  if (!auth.account.isSuperUser) {
+    res.status(403).json({ message: 'Only the superuser can invite new admins.' });
+    return;
+  }
+
+  const { name, email, phone, password } = req.body as {
+    name?: string;
+    email?: string;
+    phone?: string;
+    password?: string;
+  };
+
+  if (!name || !email || !phone || !password) {
+    res.status(400).json({ message: 'name, email, phone, and password are required.' });
+    return;
+  }
+
+  if (password.length < 8) {
+    res.status(400).json({ message: 'Password must be at least 8 characters.' });
+    return;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const existingAccount = await findAccountByEmail(normalizedEmail);
+  if (existingAccount) {
+    res.status(409).json({ message: 'An account with this email already exists.' });
+    return;
+  }
+
+  const account: Account = {
+    id: nextId('usr'),
+    name: name.trim(),
+    email: normalizedEmail,
+    phone: phone.trim(),
+    passwordHash: await hash(password, 10),
+    role: 'admin',
+    isSuperUser: false,
+    createdAt: new Date().toISOString()
+  };
+
+  try {
+    await persistAccount(account);
+  } catch {
+    res.status(500).json({ message: 'Unable to invite admin.' });
+    return;
+  }
+
+  accounts.push(account);
+  notify('account-created', { accountId: account.id, role: account.role });
+  res.status(201).json({ data: toPublicAccount(account) });
 });
 
 app.post('/api/auth/register', async (req, res) => {

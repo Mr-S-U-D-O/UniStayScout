@@ -41,6 +41,7 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Keep tightening the UI/UX foundation without changing product behavior.
 - Add PostGIS proximity analytics endpoints and deeper admin SLA/risk insights.
 - Add and document a real data provisioning workflow for Postgres imports.
+- Bootstrap the first superuser admin and allow superuser-only admin invitations.
 
 ## Backlog
 - Add production-grade file upload pipeline for listing media.
@@ -75,6 +76,7 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Admin dashboard redesign now surfaces selection policy, privileges, and operational health in one console.
 - Live build validation passed after consolidation work.
 - Real-data provisioning command was added for importing accounts, listings, profiles, interests, and reviews from JSON.
+- First superuser bootstrap was added for Mosa Moleleki, and admin invitations are now restricted to that superuser.
 
 ## Working Rules
 - Update this file whenever priorities change, work is completed, or major decisions are made.
