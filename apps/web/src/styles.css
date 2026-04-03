@@ -1,0 +1,40 @@
+:root {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.5;
+  color: #13273c;
+  background: radial-gradient(circle at 15% 10%, #dff3ff 0%, #f8fbff 45%, #eef6ff 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #c7def5;
+  border-radius: 14px;
+  padding: 1.2rem;
+  box-shadow: 0 10px 30px rgba(10, 57, 94, 0.08);
+}
+
+.panel-highlight {
+  border-color: #8dc4f8;
+}
+
+h1,
+h2 {
+  margin-top: 0;
+}

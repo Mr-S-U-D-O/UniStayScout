@@ -1,0 +1,18 @@
+{
+  "name": "unistayscout",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @unistayscout/web",
+    "dev:api": "npm run dev -w @unistayscout/api",
+    "build": "npm run build -w @unistayscout/shared && npm run build -w @unistayscout/api && npm run build -w @unistayscout/web",
+    "check": "npm run check -w @unistayscout/shared && npm run check -w @unistayscout/api && npm run check -w @unistayscout/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
