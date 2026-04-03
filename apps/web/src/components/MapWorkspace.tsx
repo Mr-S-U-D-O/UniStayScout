@@ -82,7 +82,7 @@ export function MapWorkspace({
             {selectedSchool.name} • {listings.length} listing{listings.length === 1 ? '' : 's'} in view
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div className="map-head-badges">
           {recommendedIds.length > 0 && (
             <span className="meta-pill verified">🤖 {recommendedIds.length} AI picks</span>
           )}

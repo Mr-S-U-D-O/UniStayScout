@@ -2,7 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import type { Response } from 'express';
 import crypto from 'crypto';
-import { compareSync, hashSync } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
 import { Pool } from 'pg';
 
 const app = express();
@@ -155,6 +155,13 @@ type ReviewRow = {
   rating: number;
   comment: string;
   created_at: string;
+};
+
+type ProfileRow = {
+  account_id: string;
+  role: AccountRole;
+  payload: Record<string, unknown>;
+  updated_at: string;
 };
 
 const seedSchools: School[] = [
@@ -323,38 +330,45 @@ let listings: Listing[] = [...seedListings];
 let interests: Interest[] = [];
 let reviews: Review[] = [];
 
-const seedAccounts: Account[] = [
+const seedAccountBlueprints: Array<{
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+  role: AccountRole;
+  landlordId?: string;
+}> = [
   {
     id: 'usr-admin-1',
     name: 'System Admin',
     email: 'admin@unistayscout.local',
     phone: '+27 11 000 0001',
-    passwordHash: hashSync('admin123', 10),
-    role: 'admin',
-    createdAt: new Date().toISOString()
+    password: 'admin123',
+    role: 'admin'
   },
   {
     id: 'usr-landlord-1',
     name: 'Bright Rooms SA',
     email: 'landlord@unistayscout.local',
     phone: '+27 11 000 0002',
-    passwordHash: hashSync('landlord123', 10),
+    password: 'landlord123',
     role: 'landlord',
-    landlordId: 'landlord-1',
-    createdAt: new Date().toISOString()
+    landlordId: 'landlord-1'
   },
   {
     id: 'usr-student-1',
     name: 'Lerato Student',
     email: 'student@unistayscout.local',
     phone: '+27 71 000 1234',
-    passwordHash: hashSync('student123', 10),
-    role: 'student',
-    createdAt: new Date().toISOString()
+    password: 'student123',
+    role: 'student'
   }
 ];
 
-let accounts: Account[] = [...seedAccounts];
+let accounts: Account[] = [];
+let seedAccountsCache: Account[] = [];
+const profileStore = new Map<string, Record<string, unknown>>();
 
 const sseClients = new Set<Response>();
 const authRateBuckets = new Map<string, AuthRateBucket>();
@@ -433,8 +447,36 @@ function fromReviewRow(row: ReviewRow): Review {
   };
 }
 
+async function ensureSeedAccounts(): Promise<Account[]> {
+  if (seedAccountsCache.length > 0) {
+    return seedAccountsCache;
+  }
+
+  const now = new Date().toISOString();
+  const seededAccounts: Account[] = [];
+
+  for (const seed of seedAccountBlueprints) {
+    seededAccounts.push({
+      id: seed.id,
+      name: seed.name,
+      email: seed.email,
+      phone: seed.phone,
+      passwordHash: await hash(seed.password, 10),
+      role: seed.role,
+      landlordId: seed.landlordId,
+      createdAt: now
+    });
+  }
+
+  seedAccountsCache = seededAccounts;
+  return seedAccountsCache;
+}
+
 async function initializeAccountStore(): Promise<void> {
+  const seedAccounts = await ensureSeedAccounts();
+
   if (!dbPool) {
+    accounts = [...seedAccounts];
     return;
   }
 
@@ -448,6 +490,20 @@ async function initializeAccountStore(): Promise<void> {
       role TEXT NOT NULL CHECK (role IN ('student', 'landlord', 'admin')),
       landlord_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await dbPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_accounts_email
+    ON accounts (email);
+  `);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('student', 'landlord', 'admin')),
+      payload JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
@@ -482,6 +538,64 @@ async function initializeAccountStore(): Promise<void> {
   `);
 
   accounts = rowsResult.rows.map(fromAccountRow);
+
+  const profileRows = await dbPool.query<ProfileRow>(`
+    SELECT account_id, role, payload::jsonb AS payload, updated_at
+    FROM user_profiles;
+  `);
+  profileStore.clear();
+  for (const row of profileRows.rows) {
+    profileStore.set(row.account_id, row.payload);
+  }
+}
+
+function toProfilePayload(input: unknown, role: AccountRole): Record<string, unknown> | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null;
+  }
+  const raw = input as Record<string, unknown>;
+  if (raw.role && raw.role !== role) {
+    return null;
+  }
+  return {
+    ...raw,
+    role
+  };
+}
+
+async function persistProfile(accountId: string, role: AccountRole, payload: Record<string, unknown>): Promise<void> {
+  if (!dbPool) {
+    return;
+  }
+
+  await dbPool.query(
+    `
+      INSERT INTO user_profiles (account_id, role, payload, updated_at)
+      VALUES ($1, $2, $3::jsonb, NOW())
+      ON CONFLICT (account_id)
+      DO UPDATE SET role = EXCLUDED.role, payload = EXCLUDED.payload, updated_at = NOW();
+    `,
+    [accountId, role, JSON.stringify(payload)]
+  );
+}
+
+async function findAccountByEmail(normalizedEmail: string): Promise<Account | undefined> {
+  if (!dbPool) {
+    return accounts.find((account) => account.email === normalizedEmail);
+  }
+
+  const result = await dbPool.query<AccountRow>(
+    `
+      SELECT id, name, email, phone, password_hash, role, landlord_id, created_at
+      FROM accounts
+      WHERE email = $1
+      LIMIT 1;
+    `,
+    [normalizedEmail]
+  );
+
+  const row = result.rows[0];
+  return row ? fromAccountRow(row) : undefined;
 }
 
 async function persistAccount(account: Account): Promise<void> {
@@ -1103,7 +1217,8 @@ function toPublicAccount(account: Account) {
     email: account.email,
     phone: account.phone,
     role: account.role,
-    landlordId: account.landlordId
+    landlordId: account.landlordId,
+    profileComplete: profileStore.has(account.id)
   };
 }
 
@@ -1330,9 +1445,14 @@ app.post('/api/auth/register', async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  const exists = accounts.some((account) => account.email === normalizedEmail);
-  if (exists) {
-    res.status(409).json({ message: 'An account with this email already exists.' });
+  try {
+    const existingAccount = await findAccountByEmail(normalizedEmail);
+    if (existingAccount) {
+      res.status(409).json({ message: 'An account with this email already exists.' });
+      return;
+    }
+  } catch {
+    res.status(500).json({ message: 'Unable to check account availability.' });
     return;
   }
 
@@ -1343,7 +1463,7 @@ app.post('/api/auth/register', async (req, res) => {
     name: name.trim(),
     email: normalizedEmail,
     phone: phone.trim(),
-    passwordHash: hashSync(password, 10),
+    passwordHash: await hash(password, 10),
     role,
     landlordId: role === 'landlord' ? nextId('landlord') : undefined,
     createdAt: now
@@ -1365,7 +1485,7 @@ app.post('/api/auth/register', async (req, res) => {
   });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   if (!enforceAuthRateLimit(req, res, 'login', 12, 15 * 60 * 1000)) {
     return;
   }
@@ -1376,13 +1496,22 @@ app.post('/api/auth/login', (req, res) => {
     return;
   }
 
-  const account = accounts.find((item) => item.email === email.trim().toLowerCase());
+  const normalizedEmail = email.trim().toLowerCase();
+  let account: Account | undefined;
+
+  try {
+    account = await findAccountByEmail(normalizedEmail);
+  } catch {
+    res.status(500).json({ message: 'Unable to process login right now.' });
+    return;
+  }
+
   if (!account) {
     res.status(401).json({ message: 'Invalid credentials.' });
     return;
   }
 
-  const passwordMatches = compareSync(password, account.passwordHash);
+  const passwordMatches = await compare(password, account.passwordHash);
   if (!passwordMatches) {
     res.status(401).json({ message: 'Invalid credentials.' });
     return;
@@ -1392,6 +1521,39 @@ app.post('/api/auth/login', (req, res) => {
     data: toPublicAccount(account),
     token: createAccessToken(account)
   });
+});
+
+app.get('/api/profile', (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+
+  const data = profileStore.get(auth.account.id) || null;
+  res.json({ data });
+});
+
+app.put('/api/profile', async (req, res) => {
+  const auth = requireAuth(req, res);
+  if (!auth) {
+    return;
+  }
+
+  const payload = toProfilePayload(req.body, auth.role);
+  if (!payload) {
+    res.status(400).json({ message: 'Invalid profile payload.' });
+    return;
+  }
+
+  try {
+    await persistProfile(auth.account.id, auth.role, payload);
+  } catch {
+    res.status(500).json({ message: 'Unable to save profile.' });
+    return;
+  }
+
+  profileStore.set(auth.account.id, payload);
+  res.json({ data: payload });
 });
 
 app.get('/api/dashboard-summary', (req, res) => {

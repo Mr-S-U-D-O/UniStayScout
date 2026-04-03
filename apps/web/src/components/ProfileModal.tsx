@@ -134,7 +134,7 @@ export function ProfileModal({ authUser, profile, onSave, onDeleteAccount, onClo
               </div>
             )}
             <div>
-              <h2 style={{ margin: 0 }}>{authUser.name}</h2>
+              <h2 className="profile-name">{authUser.name}</h2>
               <span className="role-tag">{authUser.role}</span>
               <div className="completeness-bar-wrap">
                 <div className="completeness-bar">
@@ -145,7 +145,7 @@ export function ProfileModal({ authUser, profile, onSave, onDeleteAccount, onClo
                     transition={{ duration: 0.5, delay: 0.2 }}
                   />
                 </div>
-                <span className="muted" style={{ fontSize: '0.78rem' }}>{pct}% complete</span>
+                <span className="muted profile-complete-label">{pct}% complete</span>
               </div>
             </div>
           </div>
@@ -202,17 +202,17 @@ export function ProfileModal({ authUser, profile, onSave, onDeleteAccount, onClo
                   <h3>Basic Info</h3>
                   <label>
                     Full Name
-                    <input value={authUser.name} readOnly style={{ opacity: 0.6 }} />
+                    <input value={authUser.name} readOnly className="readonly-input" />
                   </label>
                   <label>
                     Email
-                    <input value={authUser.email} readOnly style={{ opacity: 0.6 }} />
+                    <input value={authUser.email} readOnly className="readonly-input" />
                   </label>
                   <label>
                     Phone
-                    <input value={authUser.phone} readOnly style={{ opacity: 0.6 }} />
+                    <input value={authUser.phone} readOnly className="readonly-input" />
                   </label>
-                  <p className="muted" style={{ fontSize: '0.82rem' }}>To change name, email or phone, contact support.</p>
+                  <p className="muted profile-readonly-note">To change name, email or phone, contact support.</p>
 
                   <label>
                     Bio
@@ -433,7 +433,7 @@ export function ProfileModal({ authUser, profile, onSave, onDeleteAccount, onClo
                     <span>Role</span><span className="role-tag">{authUser.role}</span>
                   </div>
                   <div className="account-info-row">
-                    <span>Account ID</span><code style={{ fontSize: '0.75rem' }}>{authUser.id}</code>
+                    <span>Account ID</span><code className="account-id-code">{authUser.id}</code>
                   </div>
 
                   <div className="danger-zone">

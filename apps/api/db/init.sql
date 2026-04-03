@@ -11,6 +11,16 @@ CREATE TABLE IF NOT EXISTS accounts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_accounts_email
+ON accounts (email);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+  account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('student', 'landlord', 'admin')),
+  payload JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS listings (
   id TEXT PRIMARY KEY,
   landlord_id TEXT NOT NULL,

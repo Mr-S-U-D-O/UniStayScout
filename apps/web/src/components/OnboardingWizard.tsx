@@ -220,8 +220,7 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                     <span>R{studentProfile.budgetMin.toLocaleString()}</span>
                     <div className="budget-range-bar">
                       <div
-                        className="budget-range-fill"
-                        style={{ left: '0%', right: '0%' }}
+                        className="budget-range-fill budget-range-fill-full"
                       />
                     </div>
                     <span>R{studentProfile.budgetMax.toLocaleString()}</span>
@@ -537,8 +536,8 @@ function OnboardingShell({
       >
         <div className="ob-header">
           <div>
-            <h2 style={{ margin: 0 }}>{title}</h2>
-            <p className="muted" style={{ margin: 0, fontSize: '0.85rem' }}>{subtitle}</p>
+            <h2 className="onboarding-title">{title}</h2>
+            <p className="muted onboarding-subtitle">{subtitle}</p>
           </div>
           <button type="button" className="ob-skip" onClick={onSkip}>Skip for now</button>
         </div>

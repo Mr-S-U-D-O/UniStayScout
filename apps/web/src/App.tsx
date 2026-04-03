@@ -518,8 +518,7 @@ function App() {
         onOpenProfile={() => setProfileModalOpen(true)}
         logout={logout}
       />
-
-      <section className={role === 'admin' ? 'workspace-grid admin-workspace-grid' : 'workspace-grid'}>
+      <section className={`workspace-grid ${role === 'admin' ? 'admin-workspace-grid' : role === 'landlord' ? 'landlord-workspace-grid' : ''}`}>
         <aside className="left-sidebar">
           {role === 'student' && (
             <AIAssistant

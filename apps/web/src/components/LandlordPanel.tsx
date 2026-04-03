@@ -161,7 +161,7 @@ export function LandlordPanel({ landlordName, setLandlordName, selectedSchoolId,
                   ))}
                 </div>
 
-                <p className="muted" style={{ marginTop: '1rem' }}>Add photos (paste URLs):</p>
+                <p className="muted landlord-photo-label">Add photos (paste URLs):</p>
                 <div className="photo-input-row">
                   <input placeholder="https://…" value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} />
                   <button type="button" onClick={addPhoto}>+ Add</button>

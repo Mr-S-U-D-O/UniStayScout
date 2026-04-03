@@ -104,7 +104,7 @@ export function AIAssistant({
             <IconAlertTriangle size={15} />
             <strong>Profile incomplete</strong>
           </div>
-          <p className="muted" style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
+          <p className="muted ai-profile-note">
             Complete your profile to unlock personalised AI recommendations.
           </p>
           <button type="button" onClick={onOpenProfile}>Complete profile</button>
@@ -154,7 +154,7 @@ export function AIAssistant({
           </label>
         </div>
 
-        <div className="amenity-chips" style={{ marginTop: '0.5rem' }}>
+        <div className="amenity-chips amenity-chips-spaced">
           {amenityOptions.map((amenity) => (
             <div
               key={amenity}
@@ -199,7 +199,7 @@ export function AIAssistant({
             }}
           >
             <input placeholder="Ask about closer, cheaper, safer options…" value={chatInput} onChange={(e) => setChatInput(e.target.value)} />
-            <button type="submit"><IconSend size={15} /></button>
+            <button type="submit" title="Send message" aria-label="Send message"><IconSend size={15} /></button>
           </form>
         </div>
 

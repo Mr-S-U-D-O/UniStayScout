@@ -31,7 +31,7 @@ export function ListingDetail({
   setStatusMessage
 }: Props) {
   const [photoIndex, setPhotoIndex] = useState(0);
-  const photos = listing.photos.length > 0 ? listing.photos : ['/placeholder.jpg'];
+  const photos = listing.photos.length > 0 ? listing.photos : ['/placeholder.svg'];
   const walkMins = estimateWalkMinutes(listing, school);
 
   const prev = () => setPhotoIndex((i) => (i - 1 + photos.length) % photos.length);
@@ -56,14 +56,16 @@ export function ListingDetail({
           </AnimatePresence>
           {photos.length > 1 && (
             <>
-              <button type="button" className="gallery-btn gallery-prev" onClick={prev}>‹</button>
-              <button type="button" className="gallery-btn gallery-next" onClick={next}>›</button>
+              <button type="button" className="gallery-btn gallery-prev" title="Previous photo" aria-label="Previous photo" onClick={prev}>‹</button>
+              <button type="button" className="gallery-btn gallery-next" title="Next photo" aria-label="Next photo" onClick={next}>›</button>
               <div className="gallery-dots">
                 {photos.map((_, i) => (
                   <button
                     key={i}
                     type="button"
                     className={`gallery-dot ${i === photoIndex ? 'active' : ''}`}
+                    title={`Go to photo ${i + 1}`}
+                    aria-label={`Go to photo ${i + 1}`}
                     onClick={() => setPhotoIndex(i)}
                   />
                 ))}
@@ -78,7 +80,7 @@ export function ListingDetail({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
         >
-          <h2 style={{ marginTop: '1rem' }}>{listing.title}</h2>
+          <h2 className="listing-detail-title">{listing.title}</h2>
 
           <div className="listing-meta-row">
             <span className="meta-pill">{listing.roomType}</span>
@@ -147,8 +149,7 @@ export function ListingDetail({
 
         {role === 'student' && (
           <form
-            className="review-form"
-            style={{ marginTop: '1rem' }}
+            className="review-form review-form-spaced"
             onSubmit={(e) => {
               e.preventDefault();
               const form = e.currentTarget as HTMLFormElement;

@@ -90,10 +90,10 @@ export function AuthLayout({
         transition={{ duration: 0.45, delay: 0.12 }}
       >
         <div>
-          <h2 style={{ marginBottom: '0.25rem' }}>
+          <h2 className="auth-title">
             {authMode === 'login' ? 'Welcome back' : 'Create your account'}
           </h2>
-          <p className="muted" style={{ marginBottom: 0 }}>
+          <p className="muted auth-subtitle">
             {authMode === 'login' ? 'Sign in to your UniStayScout workspace.' : 'Get started in 60 seconds.'}
           </p>
         </div>
@@ -173,11 +173,11 @@ export function AuthLayout({
         {authError && <p className="auth-error">{authError}</p>}
 
         {authMode === 'login' ? (
-          <button type="button" disabled={authLoading} onClick={submitLogin} style={{ width: '100%' }}>
+          <button type="button" className="auth-submit-btn" disabled={authLoading} onClick={submitLogin}>
             {authLoading ? 'Signing in…' : 'Sign in'}
           </button>
         ) : (
-          <button type="button" disabled={authLoading} onClick={submitRegister} style={{ width: '100%' }}>
+          <button type="button" className="auth-submit-btn" disabled={authLoading} onClick={submitRegister}>
             {authLoading ? 'Creating account…' : 'Create account'}
           </button>
         )}
