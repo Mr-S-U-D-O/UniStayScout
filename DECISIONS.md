@@ -13,3 +13,4 @@
 - Use role-aware account onboarding (student/landlord self-registration, admin restricted)
 - Use role-locked dashboards after login instead of manual role switching
 - Enforce password hashing and auth endpoint throttling as baseline foundation security
+- Use PostgreSQL as the primary account store with automatic in-memory fallback for offline development

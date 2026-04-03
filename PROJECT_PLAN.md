@@ -20,6 +20,11 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Complete auth hardening (password hashing, rate limiting, strict protected endpoints).
 - Start persistence migration plan for PostgreSQL + PostGIS.
 
+## Foundation Progress (Latest)
+- Auth account storage now supports PostgreSQL mode with startup bootstrap and fallback to in-memory mode.
+- Local PostGIS-ready container setup added for development parity.
+- Next persistence target: migrate listings/interests/reviews from memory to PostgreSQL.
+
 ## Auth and Dashboard Plan (Detailed)
 1. Identity Model
 - Roles: student, landlord, admin.

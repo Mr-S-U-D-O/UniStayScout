@@ -1,0 +1,17 @@
+version: '3.9'
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: unistayscout-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: unistayscout
+      POSTGRES_USER: unistay
+      POSTGRES_PASSWORD: unistay
+    ports:
+      - '5432:5432'
+    volumes:
+      - unistayscout_db_data:/var/lib/postgresql/data
+
+volumes:
+  unistayscout_db_data:

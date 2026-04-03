@@ -691,17 +691,18 @@ function App() {
   return (
     <main className="app-shell">
       <header className="topbar panel">
-        <div>
-          <p className="eyebrow">Live Workspace</p>
+        <div className="topbar-info">
+          <span className="eyebrow">Live Workspace</span>
           <h1>UniStayScout</h1>
-          <p>
-            Logged in as {authUser.name} ({authUser.role})
-          </p>
+          <div className="user-badge">
+            <span className="role-tag">{authUser.role}</span>
+            {authUser.name}
+          </div>
         </div>
         <div className="topbar-controls">
           <label>
             School
-            <select value={selectedSchoolId} onChange={(event) => setSelectedSchoolId(event.target.value)}>
+            <select className="tool-btn" value={selectedSchoolId} onChange={(event) => setSelectedSchoolId(event.target.value)}>
               {schools.map((school) => (
                 <option key={school.id} value={school.id}>
                   {school.name}
@@ -721,7 +722,7 @@ function App() {
           </label>
           <label>
             Sort
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as 'distance' | 'price-asc' | 'price-desc')}>
+            <select className="tool-btn" value={sortBy} onChange={(event) => setSortBy(event.target.value as 'distance' | 'price-asc' | 'price-desc')}>
               <option value="distance">Nearest first</option>
               <option value="price-asc">Cheapest first</option>
               <option value="price-desc">Most expensive first</option>
@@ -729,12 +730,12 @@ function App() {
           </label>
           <label>
             Map Theme
-            <select value={mapTheme} onChange={(event) => setMapTheme(event.target.value as 'street' | 'terrain')}>
+            <select className="tool-btn" value={mapTheme} onChange={(event) => setMapTheme(event.target.value as 'street' | 'terrain')}>
               <option value="street">Street</option>
               <option value="terrain">Terrain</option>
             </select>
           </label>
-          <button type="button" className="danger" onClick={logout}>
+          <button type="button" className="danger outline" onClick={logout}>
             Logout
           </button>
         </div>
@@ -754,43 +755,51 @@ function App() {
       )}
 
       <section className="workspace-grid">
-        <aside className="left-sidebar panel">
+        <aside className="left-sidebar">
           {role === 'student' && (
             <>
-              <h2>AI Assistant</h2>
-              <p className="muted">Context-aware recommendations from your map filters.</p>
+              <div className="section-card">
+                <div className="section-head">
+                  <h2>AI Assistant</h2>
+                  <p className="muted">Context-aware recommendations from your map filters.</p>
+                </div>
 
-              <div className="profile-fields">
-                <label>
-                  Name
-                  <input value={studentName} onChange={(event) => setStudentName(event.target.value)} />
-                </label>
-                <label>
-                  Phone
-                  <input value={studentPhone} onChange={(event) => setStudentPhone(event.target.value)} />
-                </label>
-                <label>
-                  Budget (ZAR)
-                  <input
-                    type="number"
-                    value={studentBudget}
-                    onChange={(event) => setStudentBudget(Number(event.target.value))}
-                  />
-                </label>
-                <label>
-                  Room type
-                  <select
-                    value={studentRoomType}
-                    onChange={(event) => setStudentRoomType(event.target.value as 'private' | 'shared' | 'any')}
-                  >
-                    <option value="any">Any</option>
-                    <option value="private">Private</option>
-                    <option value="shared">Shared</option>
-                  </select>
-                </label>
+                <div className="profile-fields">
+                  <div className="form-row">
+                    <label>
+                      Name
+                      <input value={studentName} onChange={(event) => setStudentName(event.target.value)} />
+                    </label>
+                    <label>
+                      Phone
+                      <input value={studentPhone} onChange={(event) => setStudentPhone(event.target.value)} />
+                    </label>
+                  </div>
+                  <div className="form-row">
+                    <label>
+                      Budget (ZAR)
+                      <input
+                        type="number"
+                        value={studentBudget}
+                        onChange={(event) => setStudentBudget(Number(event.target.value))}
+                      />
+                    </label>
+                    <label>
+                      Room type
+                      <select
+                        value={studentRoomType}
+                        onChange={(event) => setStudentRoomType(event.target.value as 'private' | 'shared' | 'any')}
+                      >
+                        <option value="any">Any</option>
+                        <option value="private">Private</option>
+                        <option value="shared">Shared</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
               </div>
 
-              <section className="filter-box">
+              <section className="section-card">
                 <h3>Map Filters</h3>
                 <div className="filter-grid">
                   <label>
@@ -820,156 +829,178 @@ function App() {
 
                 <div className="amenity-chips">
                   {amenityOptions.map((amenity) => (
-                    <button
+                    <div
                       key={amenity}
-                      type="button"
                       className={selectedAmenities.includes(amenity) ? 'chip active' : 'chip'}
                       onClick={() => toggleAmenity(amenity)}
                     >
                       {amenity}
-                    </button>
+                    </div>
                   ))}
                 </div>
               </section>
 
-              <div className="chat-box">
-                {chat.map((item, index) => (
-                  <div key={`${item.role}-${index}`} className={`chat-row ${item.role}`}>
-                    <strong>{item.role === 'assistant' ? 'AI' : 'You'}:</strong> {item.message}
+              <div className="section-card">
+                <h3>Chat with AI</h3>
+                <div className="chat-container">
+                  <div className="chat-box">
+                    {chat.map((item, index) => (
+                      <div key={`${item.role}-${index}`} className={`chat-row ${item.role}`}>
+                        {item.message}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              <form
-                className="chat-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (!chatInput.trim()) {
-                    return;
-                  }
-                  askAssistant(chatInput).catch(() => setStatusMessage('Assistant request failed.'));
-                  setChatInput('');
-                }}
-              >
-                <input
-                  placeholder="Ask for closer, cheaper, or safer options..."
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                />
-                <button type="submit">Ask</button>
-              </form>
-
-              {aiQuestions.length > 0 && (
-                <div className="ai-questions">
-                  <h3>Clarifying Questions</h3>
-                  {aiQuestions.map((question) => (
-                    <p key={question}>{question}</p>
-                  ))}
+                  <form
+                    className="chat-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!chatInput.trim()) {
+                        return;
+                      }
+                      askAssistant(chatInput).catch(() => setStatusMessage('Assistant request failed.'));
+                      setChatInput('');
+                    }}
+                  >
+                    <input
+                      placeholder="Ask for closer, cheaper, or safer options..."
+                      value={chatInput}
+                      onChange={(event) => setChatInput(event.target.value)}
+                    />
+                    <button type="submit">Ask</button>
+                  </form>
                 </div>
-              )}
+
+                {aiQuestions.length > 0 && (
+                  <div className="ai-questions">
+                    <h3>Clarifying Questions</h3>
+                    {aiQuestions.map((question) => (
+                      <p key={question}>{question}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           )}
 
           {role === 'landlord' && (
             <>
-              <h2>Landlord Dashboard</h2>
-              <p className="muted">Create listings and track moderation status.</p>
-              <div className="profile-fields">
-                <label>
-                  Display Name
-                  <input value={landlordName} onChange={(event) => setLandlordName(event.target.value)} />
-                </label>
-                <label>
-                  Listing Title
-                  <input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} />
-                </label>
-                <label>
-                  Description
-                  <textarea value={newDescription} onChange={(event) => setNewDescription(event.target.value)} />
-                </label>
-                <label>
-                  Price (ZAR)
-                  <input
-                    type="number"
-                    value={newPrice}
-                    onChange={(event) => setNewPrice(Number(event.target.value))}
-                  />
-                </label>
-                <label>
-                  Room type
-                  <select value={newRoomType} onChange={(event) => setNewRoomType(event.target.value as 'private' | 'shared')}>
-                    <option value="private">Private</option>
-                    <option value="shared">Shared</option>
-                  </select>
-                </label>
-                <label>
-                  Amenities (comma separated)
-                  <input value={newAmenities} onChange={(event) => setNewAmenities(event.target.value)} />
-                </label>
-                <button type="button" onClick={() => createListing().catch(() => setStatusMessage('Listing creation failed.'))}>
-                  Submit for Review
-                </button>
+              <div className="section-card">
+                <div className="section-head">
+                  <h2>Landlord Dashboard</h2>
+                  <p className="muted">Create listings and track moderation status.</p>
+                </div>
+                <div className="profile-fields">
+                  <label>
+                    Display Name
+                    <input value={landlordName} onChange={(event) => setLandlordName(event.target.value)} />
+                  </label>
+                  <label>
+                    Listing Title
+                    <input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} />
+                  </label>
+                  <label>
+                    Description
+                    <textarea value={newDescription} onChange={(event) => setNewDescription(event.target.value)} />
+                  </label>
+                  <div className="form-row">
+                    <label>
+                      Price (ZAR)
+                      <input
+                        type="number"
+                        value={newPrice}
+                        onChange={(event) => setNewPrice(Number(event.target.value))}
+                      />
+                    </label>
+                    <label>
+                      Room type
+                      <select value={newRoomType} onChange={(event) => setNewRoomType(event.target.value as 'private' | 'shared')}>
+                        <option value="private">Private</option>
+                        <option value="shared">Shared</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    Amenities (comma separated)
+                    <input value={newAmenities} onChange={(event) => setNewAmenities(event.target.value)} />
+                  </label>
+                  <button type="button" onClick={() => createListing().catch(() => setStatusMessage('Listing creation failed.'))}>
+                    Submit for Review
+                  </button>
+                </div>
               </div>
 
-              <h3>Your Listings</h3>
-              <div className="stack-list">
-                {landlordListings.map((item) => (
-                  <article key={item.id} className={`stack-card status-${item.status}`}>
-                    <p>
-                      <strong>{item.title}</strong> - {item.price} {item.currency}
-                    </p>
-                    <p>Status: {item.status}</p>
-                    <p className="muted">Admin: {item.adminComment || 'No comments'}</p>
-                  </article>
-                ))}
+              <div className="section-card">
+                <h3>Your Listings</h3>
+                <div className="stack-list">
+                  {landlordListings.map((item) => (
+                    <article key={item.id} className={`stack-card status-${item.status}`}>
+                      <p>
+                        <strong>{item.title}</strong> - <span className="price-tag">{item.price} {item.currency}</span>
+                      </p>
+                      <p>Status: <span className={`status-badge ${item.status}`}>{item.status}</span></p>
+                      <p className="muted">Admin: {item.adminComment || 'No comments'}</p>
+                    </article>
+                  ))}
+                </div>
               </div>
             </>
           )}
 
           {role === 'admin' && (
-            <>
-              <h2>Admin Moderation</h2>
-              <p className="muted">Approve listings and monitor incoming student leads.</p>
-              <h3>Pending Listings</h3>
-              <div className="stack-list">
-                {pendingListings.length === 0 && <p className="muted">No pending listings.</p>}
-                {pendingListings.map((item) => (
-                  <article key={item.id} className="stack-card">
-                    <p>
-                      <strong>{item.title}</strong> - {item.landlordName}
-                    </p>
-                    <p>{item.description}</p>
-                    <div className="actions-row">
-                      <button
-                        type="button"
-                        onClick={() => reviewListing(item.id, 'approved', 'Approved. Listing quality meets requirements.')}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => reviewListing(item.id, 'rejected', 'Please add clearer photos and nearby amenities.')}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </article>
-                ))}
+                  <form
+                    className="review-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const formData = new FormData(event.currentTarget);
+                      submitReview(formData)
+                        .then(() => {
+                          (event.currentTarget as HTMLFormElement).reset();
+                        })
+                        .catch(() => setStatusMessage('Review submit failed.'));
+                    }}
+                  >
+                    <input name="author" defaultValue={studentName} placeholder="Your name" required />
+                    <input
+                      name="rating"
+                      type="number"
+                      min={1}
+                      max={5}
+                      defaultValue={5}
+                      placeholder="Rating 1-5"
+                      title="Rating from 1 to 5"
+                      required
+                    />
+                    <textarea name="comment" placeholder="Share your feedback" required />
+                    <button type="submit">Post Review</button>
+                  </form>
+                )}
+              </div>
+                          className="danger outline"
+                          onClick={() => reviewListing(item.id, 'rejected', 'Please add clearer photos and nearby amenities.')}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
               </div>
 
-              <h3>Student Interest Leads</h3>
-              <div className="stack-list">
-                {interests.length === 0 && <p className="muted">No leads yet.</p>}
-                {interests.map((lead) => (
-                  <article key={lead.id} className="stack-card">
-                    <p>
-                      <strong>{lead.studentName}</strong> {'->'} {lead.listingTitle}
-                    </p>
-                    <p>Phone: {lead.studentPhone}</p>
-                    <p className="muted">{new Date(lead.createdAt).toLocaleString()}</p>
-                  </article>
-                ))}
+              <div className="section-card">
+                <h3>Student Interest Leads</h3>
+                <div className="stack-list">
+                  {interests.length === 0 && <p className="muted">No leads yet.</p>}
+                  {interests.map((lead) => (
+                    <article key={lead.id} className="stack-card">
+                      <p>
+                        <strong>{lead.studentName}</strong> {'->'} {lead.listingTitle}
+                      </p>
+                      <p>Phone: {lead.studentPhone}</p>
+                      <p className="muted">{new Date(lead.createdAt).toLocaleString()}</p>
+                    </article>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -1029,56 +1060,66 @@ function App() {
           )}
         </section>
 
-        <aside className="detail-pane panel">
-          {!selectedListing && <p>Select a listing pin to view details.</p>}
+        <aside className="detail-pane">
+          {!selectedListing && (
+            <div className="section-card">
+              <p>Select a listing pin to view details.</p>
+            </div>
+          )}
           {selectedListing && (
             <>
-              <img src={selectedListing.photos[0]} alt={selectedListing.title} className="listing-photo" />
-              <h2>{selectedListing.title}</h2>
-              <div className="listing-meta-row">
-                <span className="meta-pill">{selectedListing.roomType}</span>
-                <span className="meta-pill">{selectedListing.distanceKm?.toFixed(1)} km</span>
-                <span className="meta-pill">{selectedListing.views} views</span>
-                <span className="meta-pill">{selectedListing.availableBeds} beds</span>
-                {selectedListing.isVerified && <span className="meta-pill verified">Verified</span>}
-              </div>
-              <p>
-                <strong>
+              <div className="section-card">
+                <img src={selectedListing.photos[0]} alt={selectedListing.title} className="listing-photo" />
+                <h2>{selectedListing.title}</h2>
+                <div className="listing-meta-row">
+                  <span className="meta-pill">{selectedListing.roomType}</span>
+                  <span className="meta-pill">{selectedListing.distanceKm?.toFixed(1)} km</span>
+                  <span className="meta-pill">{selectedListing.views} views</span>
+                  <span className="meta-pill">{selectedListing.availableBeds} beds</span>
+                  {selectedListing.isVerified && <span className="meta-pill verified">Verified</span>}
+                </div>
+                <div className="price-tag">
                   {selectedListing.price} {selectedListing.currency}
-                </strong>{' '}
-                - {selectedListing.distanceKm?.toFixed(1)}km from school
-              </p>
-              <p>{selectedListing.description}</p>
-              <p>
-                <strong>Room:</strong> {selectedListing.roomType}
-              </p>
-              <p>
-                <strong>Amenities:</strong> {selectedListing.amenities.join(', ')}
-              </p>
-              <p>
-                <strong>Landlord:</strong> {selectedListing.landlordName}
-              </p>
+                </div>
+                <p>
+                  {selectedListing.distanceKm?.toFixed(1)}km from school
+                </p>
+                <p className="muted">{selectedListing.description}</p>
+                
+                <div className="profile-fields" style={{marginTop: '0.5rem'}}>
+                  <p>
+                    <strong>Room:</strong> {selectedListing.roomType}
+                  </p>
+                  <p>
+                    <strong>Amenities:</strong> {selectedListing.amenities.join(', ')}
+                  </p>
+                  <p>
+                    <strong>Landlord:</strong> {selectedListing.landlordName}
+                  </p>
+                </div>
 
-              {role === 'student' && (
-                <button type="button" onClick={() => submitInterest().catch(() => setStatusMessage('Interest submit failed.'))}>
-                  I am Interested
-                </button>
-              )}
-
-              <h3>Ratings & Comments</h3>
-              <div className="stack-list">
-                {reviews.length === 0 && <p className="muted">No reviews yet.</p>}
-                {reviews.map((item) => (
-                  <article key={item.id} className="stack-card">
-                    <p>
-                      <strong>{item.author}</strong> - {item.rating}/5
-                    </p>
-                    <p>{item.comment}</p>
-                  </article>
-                ))}
+                {role === 'student' && (
+                  <button type="button" onClick={() => submitInterest().catch(() => setStatusMessage('Interest submit failed.'))} style={{marginTop: '1rem', width: '100%'}}>
+                    I am Interested
+                  </button>
+                )}
               </div>
 
-              {role === 'student' && (
+              <div className="section-card">
+                <h3>Ratings & Comments</h3>
+                <div className="stack-list">
+                  {reviews.length === 0 && <p className="muted">No reviews yet.</p>}
+                  {reviews.map((item) => (
+                    <article key={item.id} className="stack-card">
+                      <p>
+                        <strong>{item.author}</strong> - <span className="status-badge approved">{item.rating}/5</span>
+                      </p>
+                      <p>{item.comment}</p>
+                    </article>
+                  ))}
+                </div>
+
+                {role === 'student' && (
                 <form
                   className="review-form"
                   onSubmit={(event) => {
@@ -1105,7 +1146,8 @@ function App() {
                   <textarea name="comment" placeholder="Share your feedback" required />
                   <button type="submit">Post Review</button>
                 </form>
-              )}
+                )}
+              </div>
             </>
           )}
         </aside>

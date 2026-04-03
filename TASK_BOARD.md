@@ -1,7 +1,7 @@
 # Task Board
 
 ## Backlog
-- Persist data in PostgreSQL + PostGIS
+- Persist listings/interests/reviews in PostgreSQL + PostGIS
 - Add production-grade file upload pipeline for listing media
 - Harden moderation and anti-abuse controls
 - Add end-to-end tests for role flows and map behaviors
@@ -25,3 +25,5 @@
 - Implemented role-based dashboard summary API and UI cards
 - Built auth and RBAC middleware for protected API routes
 - Added password hashing and signed token verification
+- Added PostgreSQL-backed account store bootstrap with in-memory fallback
+- Added local PostGIS docker foundation and DB init SQL

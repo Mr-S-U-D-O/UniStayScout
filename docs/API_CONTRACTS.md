@@ -2,6 +2,7 @@
 
 ## Health
 - GET /health -> { status: "ok" }
+- GET /health/db -> postgres connectivity status
 
 ## Real-Time Events
 - GET /api/events

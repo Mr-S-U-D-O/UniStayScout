@@ -25,3 +25,8 @@
 - Added bcrypt-based password hashing for seeded and newly registered accounts
 - Added auth endpoint rate limiting for login and registration routes
 - Hardened token-based auth contract alignment in API docs
+
+## 0.5.0 - 2026-04-03
+- Added optional PostgreSQL-backed account persistence with startup bootstrap
+- Added DB health endpoint (`/health/db`) for runtime database connectivity checks
+- Added local PostGIS docker compose setup and account schema init SQL
