@@ -295,7 +295,7 @@ app.post('/api/chat', async (c) => {
   const { message, context } = await c.req.json();
   const genAI = new GoogleGenerativeAI(c.env.GOOGLE_GENAI_API_KEY || '');
   const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-  
+
   const prompt = `You are UniStayScout Assistant. Help the student find accommodation based on:
 Message: "${message}"
 Context: ${JSON.stringify(context)}
@@ -384,7 +384,7 @@ app.get('/api/events', (c) => {
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
-  
+
   // Send heartbeat every 10 seconds to keep connection alive
   const interval = setInterval(() => {
     writer.write(encoder.encode(': heartbeat\n\n')).catch(() => clearInterval(interval));

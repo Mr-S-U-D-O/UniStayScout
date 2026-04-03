@@ -1,6 +1,6 @@
 {
   "name": "@unistayscout/api",
-    "@google/generative-ai": "^0.21.0",
+  "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -21,7 +21,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.4.0",
     "hono": "^4.12.10",
-    "pg": "^1.1.0"
+    "pg": "^8.20.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
