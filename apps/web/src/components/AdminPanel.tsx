@@ -203,21 +203,47 @@ export function AdminPanel({ authUser, pendingListings, interests, adminInsights
               </p>
               {lead.handoffNote && <p className="muted">Handoff note: {lead.handoffNote}</p>}
               {lead.handoffStatus !== 'landlord-notified' && (
-                <button
-                  type="button"
-                  disabled={handingOffId === lead.id}
-                  onClick={async () => {
-                    const note = window.prompt('Optional note for landlord handoff:', '') || '';
-                    setHandingOffId(lead.id);
-                    try {
-                      await handoffInterest(lead.id, 'call', note);
-                    } finally {
-                      setHandingOffId('');
-                    }
-                  }}
-                >
-                  {handingOffId === lead.id ? 'Saving…' : 'Mark Landlord Notified'}
-                </button>
+                <div className="actions-row">
+                  <button
+                    type="button"
+                    disabled={handingOffId === lead.id}
+                    onClick={async () => {
+                      const note = window.prompt('Optional note for landlord handoff:', '') || '';
+                      setHandingOffId(lead.id);
+                      try {
+                        await handoffInterest(lead.id, 'call', note);
+                      } finally {
+                        setHandingOffId('');
+                      }
+                    }}
+                  >
+                    {handingOffId === lead.id ? 'Saving…' : 'Mark Landlord Notified'}
+                  </button>
+
+                  {lead.landlordPhone && (
+                    <button
+                      type="button"
+                      className="whatsapp-btn"
+                      onClick={async () => {
+                        const phone = lead.landlordPhone;
+                        if (!phone) return;
+                        const message = `Hello, this is UniStayScout Admin. We have a student interest for your listing "${lead.listingTitle}". \n\nStudent: ${lead.studentName}\nPhone: ${lead.studentPhone}\nNote: ${lead.studentNote}`;
+                        const encoded = encodeURIComponent(message);
+                        window.open(`https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encoded}`, '_blank');
+                        
+                        // Also mark as notified automatically
+                        setHandingOffId(lead.id);
+                        try {
+                          await handoffInterest(lead.id, 'whatsapp', 'WhatsApp message sent to landlord.');
+                        } finally {
+                          setHandingOffId('');
+                        }
+                      }}
+                    >
+                      WhatsApp Landlord
+                    </button>
+                  )}
+                </div>
               )}
               <p className="muted">{new Date(lead.createdAt).toLocaleString()}</p>
             </motion.article>

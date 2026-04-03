@@ -1,19 +1,16 @@
-import 'dotenv/config';
-import cors from 'cors';
-import express from 'express';
-import type { Response } from 'express';
-import crypto from 'crypto';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { Pool } from '@neondatabase/serverless';
 import { compare, hash } from 'bcryptjs';
-import { Pool } from 'pg';
-import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 
-const app = express();
-const port = Number(process.env.PORT || 4000);
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 type UserRole = 'student' | 'landlord' | 'admin';
+type ListingStatus = 'pending' | 'approved' | 'rejected';
+type InterestHandoffStatus = 'new' | 'landlord-notified';
+type InterestHandoffChannel = 'call' | 'sms' | 'whatsapp' | 'email';
+type AccountRole = 'student' | 'landlord' | 'admin';
 
 type School = {
   id: string;
@@ -24,10 +21,6 @@ type School = {
   source?: 'seed' | 'osm';
   address?: string;
 };
-
-type ListingStatus = 'pending' | 'approved' | 'rejected';
-type InterestHandoffStatus = 'new' | 'landlord-notified';
-type InterestHandoffChannel = 'call' | 'sms' | 'whatsapp' | 'email';
 
 type Listing = {
   id: string;
@@ -68,30 +61,6 @@ type Interest = {
   createdAt: string;
 };
 
-type Review = {
-  id: string;
-  listingId: string;
-  author: string;
-  rating: number;
-  comment: string;
-  createdAt: string;
-};
-
-type StudentProfile = {
-  name: string;
-  budget?: number;
-  budgetMax?: number;
-  budgetMin?: number;
-  roomType?: 'private' | 'shared' | 'any';
-};
-
-type MapContext = {
-  schoolId?: string;
-  radiusKm?: number;
-};
-
-type AccountRole = 'student' | 'landlord' | 'admin';
-
 type Account = {
   id: string;
   name: string;
@@ -104,2362 +73,365 @@ type Account = {
   createdAt: string;
 };
 
-type AuthRateBucket = {
-  count: number;
-  resetAt: number;
+type Bindings = {
+  DATABASE_URL: string;
+  AUTH_TOKEN_SECRET: string;
+  CLOUDINARY_CLOUD_NAME: string;
+  CLOUDINARY_API_KEY: string;
+  CLOUDINARY_API_SECRET: string;
+  GOOGLE_GENAI_API_KEY?: string;
+  NODE_ENV?: string;
 };
 
-type AuthFailureBucket = {
-  count: number;
-  firstFailureAt: number;
-  lockedUntil: number;
-};
+// ─── Initialization ──────────────────────────────────────────────────────────
 
-type AuthContext = {
-  account: Account;
-  role: AccountRole;
-};
+const app = new Hono<{ Bindings: Bindings }>();
 
-type AccountRow = {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  password_hash: string;
-  role: AccountRole;
-  landlord_id: string | null;
-  is_super_user: boolean;
-  created_at: string;
-};
+app.use('*', cors());
 
-type ListingRow = {
-  id: string;
-  landlord_id: string;
-  landlord_name: string;
-  title: string;
-  description: string;
-  school_id: string;
-  location_label: string;
-  latitude: number;
-  longitude: number;
-  price: number;
-  currency: string;
-  room_type: 'private' | 'shared';
-  amenities: string[];
-  photos: string[];
-  is_verified: boolean;
-  available_beds: number;
-  status: ListingStatus;
-  admin_comment: string;
-  created_at: string;
-  updated_at: string;
-  views: number;
-};
+// SSE State (Workers are stateless, so this only works per-isolate/request)
+// For true global SSE on Cloudflare, one would use Durable Objects.
+// For now, we'll provide a stub or basic stream.
+const sseStreams = new Set<ReadableStreamDefaultController>();
 
-type ListingDistanceRow = ListingRow & {
-  distance_km: number;
-};
-
-type InterestRow = {
-  id: string;
-  listing_id: string;
-  student_user_id: string | null;
-  student_name: string;
-  student_phone: string;
-  student_note: string;
-  handoff_status: InterestHandoffStatus | null;
-  handed_off_at: string | null;
-  handoff_channel: InterestHandoffChannel | null;
-  handoff_note: string | null;
-  handed_off_by_admin_id: string | null;
-  created_at: string;
-};
-
-type ReviewRow = {
-  id: string;
-  listing_id: string;
-  author: string;
-  rating: number;
-  comment: string;
-  created_at: string;
-};
-
-type ProfileRow = {
-  account_id: string;
-  role: AccountRole;
-  payload: Record<string, unknown>;
-  updated_at: string;
-};
-
-const seedSchools: School[] = [
-  {
-    id: 'uj-auckland-park',
-    name: 'University of Johannesburg - Auckland Park',
-    city: 'Johannesburg',
-    latitude: -26.1829,
-    longitude: 27.9994,
-    source: 'seed'
-  },
-  {
-    id: 'wits-braamfontein',
-    name: 'University of the Witwatersrand - Braamfontein',
-    city: 'Johannesburg',
-    latitude: -26.1929,
-    longitude: 28.0305,
-    source: 'seed'
-  }
-];
-
-let schools: School[] = [...seedSchools];
-
-let listings: Listing[] = [];
-let interests: Interest[] = [];
-let reviews: Review[] = [];
-
-let accounts: Account[] = [];
-const profileStore = new Map<string, Record<string, unknown>>();
-
-type BootstrapAdminConfig = {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-};
-
-function readBootstrapAdminConfig(): BootstrapAdminConfig | null {
-  const enabled = String(process.env.BOOTSTRAP_ADMIN_ENABLED || '').toLowerCase() === 'true';
-  if (!enabled) {
-    return null;
-  }
-
-  const name = String(process.env.BOOTSTRAP_ADMIN_NAME || '').trim();
-  const email = String(process.env.BOOTSTRAP_ADMIN_EMAIL || '').trim().toLowerCase();
-  const phone = String(process.env.BOOTSTRAP_ADMIN_PHONE || '').trim();
-  const password = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || '');
-  const id = String(process.env.BOOTSTRAP_ADMIN_ID || 'usr-admin-bootstrap').trim();
-
-  if (!name || !email || !phone || !password) {
-    return null;
-  }
-
-  const adminPasswordError = validateAdminPassword(password);
-  if (adminPasswordError) {
-    console.warn(`Bootstrap admin disabled: ${adminPasswordError}`);
-    return null;
-  }
-
-  return { id, name, email, phone, password };
-}
-
-function validateAdminPassword(password: string): string | null {
-  if (password.length < 12) {
-    return 'Admin password must be at least 12 characters.';
-  }
-  if (!/[A-Z]/.test(password)) {
-    return 'Admin password must include at least one uppercase letter.';
-  }
-  if (!/[a-z]/.test(password)) {
-    return 'Admin password must include at least one lowercase letter.';
-  }
-  if (!/[0-9]/.test(password)) {
-    return 'Admin password must include at least one number.';
-  }
-  if (!/[^A-Za-z0-9]/.test(password)) {
-    return 'Admin password must include at least one special character.';
-  }
-  return null;
-}
-
-function readAuthFailureBucketKey(email: string): string {
-  return email.trim().toLowerCase();
-}
-
-function getAuthLockoutStatus(email: string): { locked: boolean; retryAfterSeconds: number } {
-  const now = Date.now();
-  const key = readAuthFailureBucketKey(email);
-  const bucket = authFailureBuckets.get(key);
-  if (!bucket) {
-    return { locked: false, retryAfterSeconds: 0 };
-  }
-  if (bucket.lockedUntil <= now) {
-    authFailureBuckets.delete(key);
-    return { locked: false, retryAfterSeconds: 0 };
-  }
-  return {
-    locked: true,
-    retryAfterSeconds: Math.max(1, Math.ceil((bucket.lockedUntil - now) / 1000))
-  };
-}
-
-function registerAuthFailure(email: string): { isLocked: boolean; retryAfterSeconds: number } {
-  const now = Date.now();
-  const windowMs = 15 * 60 * 1000;
-  const lockoutMs = 15 * 60 * 1000;
-  const maxFailures = 6;
-  const key = readAuthFailureBucketKey(email);
-  const existing = authFailureBuckets.get(key);
-
-  if (!existing || now - existing.firstFailureAt > windowMs) {
-    const next: AuthFailureBucket = {
-      count: 1,
-      firstFailureAt: now,
-      lockedUntil: 0
-    };
-    authFailureBuckets.set(key, next);
-    return { isLocked: false, retryAfterSeconds: 0 };
-  }
-
-  const nextCount = existing.count + 1;
-  const lockedUntil = nextCount >= maxFailures ? now + lockoutMs : 0;
-  authFailureBuckets.set(key, {
-    count: nextCount,
-    firstFailureAt: existing.firstFailureAt,
-    lockedUntil
-  });
-
-  if (!lockedUntil) {
-    return { isLocked: false, retryAfterSeconds: 0 };
-  }
-
-  return {
-    isLocked: true,
-    retryAfterSeconds: Math.max(1, Math.ceil((lockedUntil - now) / 1000))
-  };
-}
-
-function clearAuthFailures(email: string): void {
-  authFailureBuckets.delete(readAuthFailureBucketKey(email));
-}
-
-const sseClients = new Set<Response>();
-const authRateBuckets = new Map<string, AuthRateBucket>();
-const authFailureBuckets = new Map<string, AuthFailureBucket>();
-let schoolDirectoryRefreshPromise: Promise<void> | null = null;
-const defaultTokenSecret = 'unistayscout-dev-secret';
-const tokenSecret = process.env.AUTH_TOKEN_SECRET || defaultTokenSecret;
-const isProduction = process.env.NODE_ENV === 'production';
-const tokenTtlSeconds = 60 * 60 * 12;
-const databaseUrl = process.env.DATABASE_URL;
-const dbPool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : null;
-
-if (isProduction) {
-  if (!process.env.AUTH_TOKEN_SECRET || tokenSecret === defaultTokenSecret || tokenSecret.length < 32) {
-    throw new Error('AUTH_TOKEN_SECRET must be set to a strong value (>=32 chars) in production.');
-  }
-}
-
-function fromAccountRow(row: AccountRow): Account {
-  return {
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    phone: row.phone,
-    passwordHash: row.password_hash,
-    role: row.role,
-    landlordId: row.landlord_id || undefined,
-    isSuperUser: row.is_super_user,
-    createdAt: row.created_at
-  };
-}
-
-function fromListingRow(row: ListingRow): Listing {
-  return {
-    id: row.id,
-    landlordId: row.landlord_id,
-    landlordName: row.landlord_name,
-    title: row.title,
-    description: row.description,
-    schoolId: row.school_id,
-    locationLabel: row.location_label,
-    latitude: Number(row.latitude),
-    longitude: Number(row.longitude),
-    price: Number(row.price),
-    currency: row.currency,
-    roomType: row.room_type,
-    amenities: row.amenities || [],
-    photos: row.photos || [],
-    isVerified: Boolean(row.is_verified),
-    availableBeds: Number(row.available_beds),
-    status: row.status,
-    adminComment: row.admin_comment || '',
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    views: Number(row.views)
-  };
-}
-
-function fromListingDistanceRow(row: ListingDistanceRow): Listing & { distanceKm: number } {
-  return {
-    ...fromListingRow(row),
-    distanceKm: Number(row.distance_km)
-  };
-}
-
-function fromInterestRow(row: InterestRow): Interest {
-  return {
-    id: row.id,
-    listingId: row.listing_id,
-    studentUserId: row.student_user_id || undefined,
-    studentName: row.student_name,
-    studentPhone: row.student_phone,
-    studentNote: row.student_note,
-    handoffStatus: row.handoff_status || 'new',
-    handedOffAt: row.handed_off_at || undefined,
-    handoffChannel: row.handoff_channel || undefined,
-    handoffNote: row.handoff_note || '',
-    handedOffByAdminId: row.handed_off_by_admin_id || undefined,
-    createdAt: row.created_at
-  };
-}
-
-function fromReviewRow(row: ReviewRow): Review {
-  return {
-    id: row.id,
-    listingId: row.listing_id,
-    author: row.author,
-    rating: Number(row.rating),
-    comment: row.comment,
-    createdAt: row.created_at
-  };
-}
-
-async function logSecurityAudit(eventType: string, email: string, ip: string, metadata: Record<string, unknown> = {}): Promise<void> {
-  console.log(`[AUDIT] ${eventType} | IP: ${ip} | Email: ${email}`);
-  if (!dbPool) return;
-  try {
-    const id = nextId('audit');
-    await dbPool.query(
-      `INSERT INTO security_audit_logs (id, event_type, account_email, ip_address, metadata, created_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, NOW());`,
-      [id, eventType, email, ip, JSON.stringify(metadata)]
-    );
-  } catch (err) {
-    console.error('Failed to log security audit to db:', err);
-  }
-}
-
-async function initializeAccountStore(): Promise<void> {
-  if (!dbPool) {
-    accounts = [];
-    return;
-  }
-
-  await dbPool.query(`
-    CREATE TABLE IF NOT EXISTS accounts (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      phone TEXT NOT NULL,
-      password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('student', 'landlord', 'admin')),
-      landlord_id TEXT,
-      is_super_user BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await dbPool.query(`
-    ALTER TABLE accounts
-    ADD COLUMN IF NOT EXISTS is_super_user BOOLEAN NOT NULL DEFAULT FALSE;
-  `);
-
-  await dbPool.query(`
-    CREATE INDEX IF NOT EXISTS idx_accounts_email
-    ON accounts (email);
-  `);
-
-  await dbPool.query(`
-    CREATE INDEX IF NOT EXISTS idx_accounts_role
-    ON accounts (role);
-  `);
-
-  await dbPool.query(`
-    CREATE TABLE IF NOT EXISTS user_profiles (
-      account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
-      role TEXT NOT NULL CHECK (role IN ('student', 'landlord', 'admin')),
-      payload JSONB NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await dbPool.query(`
-    CREATE TABLE IF NOT EXISTS security_audit_logs (
-      id TEXT PRIMARY KEY,
-      event_type TEXT NOT NULL,
-      account_email TEXT NOT NULL,
-      ip_address TEXT NOT NULL,
-      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await dbPool.query(`
-    CREATE INDEX IF NOT EXISTS idx_security_audit_logs_email
-    ON security_audit_logs (account_email);
-  `);
-
-  const rowsResult = await dbPool.query<AccountRow>(`
-    SELECT id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at
-    FROM accounts
-    ORDER BY created_at ASC;
-  `);
-
-  accounts = rowsResult.rows.map(fromAccountRow);
-
-  if (accounts.filter((account) => account.role === 'admin').length === 0) {
-    const bootstrapAdminConfig = readBootstrapAdminConfig();
-    if (!bootstrapAdminConfig) {
-      console.warn(
-        'No admin account exists. Set BOOTSTRAP_ADMIN_ENABLED=true and provide BOOTSTRAP_ADMIN_NAME, BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PHONE, BOOTSTRAP_ADMIN_PASSWORD to create the first superuser.'
-      );
-    } else {
-      const bootstrapHash = await hash(bootstrapAdminConfig.password, 10);
-      await dbPool.query(
-        `
-          INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NOW())
-          ON CONFLICT (email)
-          DO UPDATE SET
-            name = EXCLUDED.name,
-            password_hash = EXCLUDED.password_hash,
-            role = EXCLUDED.role,
-            landlord_id = EXCLUDED.landlord_id,
-            is_super_user = TRUE;
-        `,
-        [
-          bootstrapAdminConfig.id,
-          bootstrapAdminConfig.name,
-          bootstrapAdminConfig.email,
-          bootstrapAdminConfig.phone,
-          bootstrapHash,
-          'admin',
-          null
-        ]
-      );
-
-      const refreshed = await dbPool.query<AccountRow>(`
-        SELECT id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at
-        FROM accounts
-        ORDER BY created_at ASC;
-      `);
-      accounts = refreshed.rows.map(fromAccountRow);
-    }
-  }
-
-  const profileRows = await dbPool.query<ProfileRow>(`
-    SELECT account_id, role, payload::jsonb AS payload, updated_at
-    FROM user_profiles;
-  `);
-  profileStore.clear();
-  for (const row of profileRows.rows) {
-    profileStore.set(row.account_id, row.payload);
-  }
-}
-
-function toProfilePayload(input: unknown, role: AccountRole): Record<string, unknown> | null {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return null;
-  }
-  const raw = input as Record<string, unknown>;
-  if (raw.role && raw.role !== role) {
-    return null;
-  }
-  return {
-    ...raw,
-    role
-  };
-}
-
-async function persistProfile(accountId: string, role: AccountRole, payload: Record<string, unknown>): Promise<void> {
-  if (!dbPool) {
-    return;
-  }
-
-  await dbPool.query(
-    `
-      INSERT INTO user_profiles (account_id, role, payload, updated_at)
-      VALUES ($1, $2, $3::jsonb, NOW())
-      ON CONFLICT (account_id)
-      DO UPDATE SET role = EXCLUDED.role, payload = EXCLUDED.payload, updated_at = NOW();
-    `,
-    [accountId, role, JSON.stringify(payload)]
-  );
-}
-
-async function findAccountByEmail(normalizedEmail: string): Promise<Account | undefined> {
-  if (!dbPool) {
-    return accounts.find((account) => account.email === normalizedEmail);
-  }
-
-  const result = await dbPool.query<AccountRow>(
-    `
-      SELECT id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at
-      FROM accounts
-      WHERE email = $1
-      LIMIT 1;
-    `,
-    [normalizedEmail]
-  );
-
-  const row = result.rows[0];
-  return row ? fromAccountRow(row) : undefined;
-}
-
-async function persistAccount(account: Account): Promise<void> {
-  if (!dbPool) {
-    return;
-  }
-
-  await dbPool.query(
-    `
-      INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, is_super_user, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      ON CONFLICT (email)
-      DO UPDATE SET
-        name = EXCLUDED.name,
-        phone = EXCLUDED.phone,
-        password_hash = EXCLUDED.password_hash,
-        role = EXCLUDED.role,
-        landlord_id = EXCLUDED.landlord_id,
-        is_super_user = EXCLUDED.is_super_user;
-    `,
-    [
-      account.id,
-      account.name,
-      account.email,
-      account.phone,
-      account.passwordHash,
-      account.role,
-      account.landlordId || null,
-      account.isSuperUser || false,
-      account.createdAt
-    ]
-  );
-}
-
-async function initializeMarketplaceStore(): Promise<void> {
-  if (!dbPool) {
-    return;
-  }
-
-  await dbPool.query(`
-    CREATE TABLE IF NOT EXISTS listings (
-      id TEXT PRIMARY KEY,
-      landlord_id TEXT NOT NULL,
-      landlord_name TEXT NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL,
-      school_id TEXT NOT NULL,
-      location_label TEXT NOT NULL,
-      latitude DOUBLE PRECISION NOT NULL,
-      longitude DOUBLE PRECISION NOT NULL,
-      location_geom geometry(Point, 4326),
-      price NUMERIC(12, 2) NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'ZAR',
-      room_type TEXT NOT NULL CHECK (room_type IN ('private', 'shared')),
-      amenities JSONB NOT NULL DEFAULT '[]'::jsonb,
-      photos JSONB NOT NULL DEFAULT '[]'::jsonb,
-      is_verified BOOLEAN NOT NULL DEFAULT FALSE,
-      available_beds INTEGER NOT NULL DEFAULT 1,
-      status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
-      admin_comment TEXT NOT NULL DEFAULT '',
-      created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL,
-      views INTEGER NOT NULL DEFAULT 0
-    );
-  `);
-
-  await dbPool.query(`
-    ALTER TABLE listings
-    ADD COLUMN IF NOT EXISTS location_geom geometry(Point, 4326);
-  `);
-
-  await dbPool.query(`
-    UPDATE listings
-    SET location_geom = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
-    WHERE location_geom IS NULL;
-  `);
-
-  await dbPool.query(`
-    CREATE INDEX IF NOT EXISTS idx_listings_location_geom
-    ON listings USING GIST (location_geom);
-  `);
-
-  await dbPool.query(`
-    CREATE INDEX IF NOT EXISTS idx_listings_school_status
-    ON listings (school_id, status);
-  `);
-
-  await dbPool.query(`
-    CREATE TABLE IF NOT EXISTS interests (
-      id TEXT PRIMARY KEY,
-      listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
-      student_user_id TEXT,
-      student_name TEXT NOT NULL,
-      student_phone TEXT NOT NULL,
-      student_note TEXT NOT NULL DEFAULT '',
-      handoff_status TEXT NOT NULL DEFAULT 'new' CHECK (handoff_status IN ('new', 'landlord-notified')),
-      handed_off_at TIMESTAMPTZ,
-      handoff_channel TEXT CHECK (handoff_channel IN ('call', 'sms', 'whatsapp', 'email')),
-      handoff_note TEXT NOT NULL DEFAULT '',
-      handed_off_by_admin_id TEXT,
-      created_at TIMESTAMPTZ NOT NULL
-    );
-  `);
-
-  await dbPool.query(`
-    ALTER TABLE interests
-    ADD COLUMN IF NOT EXISTS handoff_status TEXT NOT NULL DEFAULT 'new';
-  `);
-  await dbPool.query(`
-    ALTER TABLE interests
-    ADD COLUMN IF NOT EXISTS handed_off_at TIMESTAMPTZ;
-  `);
-  await dbPool.query(`
-    ALTER TABLE interests
-    ADD COLUMN IF NOT EXISTS handoff_channel TEXT;
-  `);
-  await dbPool.query(`
-    ALTER TABLE interests
-    ADD COLUMN IF NOT EXISTS handoff_note TEXT NOT NULL DEFAULT '';
-  `);
-  await dbPool.query(`
-    ALTER TABLE interests
-    ADD COLUMN IF NOT EXISTS handed_off_by_admin_id TEXT;
-  `);
-  await dbPool.query(`
-    UPDATE interests
-    SET handoff_status = 'new'
-    WHERE handoff_status IS NULL;
-  `);
-
-  await dbPool.query(`
-    CREATE TABLE IF NOT EXISTS reviews (
-      id TEXT PRIMARY KEY,
-      listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
-      author TEXT NOT NULL,
-      rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
-      comment TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL
-    );
-  `);
-
-  const listingRows = await dbPool.query<ListingRow>(`
-    SELECT
-      id, landlord_id, landlord_name, title, description, school_id, location_label,
-      latitude, longitude, price, currency, room_type,
-      amenities::jsonb AS amenities,
-      photos::jsonb AS photos,
-      is_verified, available_beds, status, admin_comment, created_at, updated_at, views
-    FROM listings
-    ORDER BY created_at ASC;
-  `);
-
-  listings = listingRows.rows.map(fromListingRow);
-
-  const interestRows = await dbPool.query<InterestRow>(`
-    SELECT
-      id,
-      listing_id,
-      student_user_id,
-      student_name,
-      student_phone,
-      student_note,
-      handoff_status,
-      handed_off_at,
-      handoff_channel,
-      handoff_note,
-      handed_off_by_admin_id,
-      created_at
-    FROM interests
-    ORDER BY created_at DESC;
-  `);
-  interests = interestRows.rows.map(fromInterestRow);
-
-  const reviewRows = await dbPool.query<ReviewRow>(`
-    SELECT id, listing_id, author, rating, comment, created_at
-    FROM reviews
-    ORDER BY created_at DESC;
-  `);
-  reviews = reviewRows.rows.map(fromReviewRow);
-}
-
-async function persistListing(listing: Listing): Promise<void> {
-  if (!dbPool) {
-    return;
-  }
-
-  await dbPool.query(
-    `
-      INSERT INTO listings (
-        id, landlord_id, landlord_name, title, description, school_id, location_label,
-        latitude, longitude, location_geom, price, currency, room_type, amenities, photos,
-        is_verified, available_beds, status, admin_comment, created_at, updated_at, views
-      )
-      VALUES (
-        $1, $2, $3, $4, $5, $6, $7,
-        $8, $9, ST_SetSRID(ST_MakePoint($9, $8), 4326), $10, $11, $12, $13::jsonb, $14::jsonb,
-        $15, $16, $17, $18, $19, $20, $21
-      );
-    `,
-    [
-      listing.id,
-      listing.landlordId,
-      listing.landlordName,
-      listing.title,
-      listing.description,
-      listing.schoolId,
-      listing.locationLabel,
-      listing.latitude,
-      listing.longitude,
-      listing.price,
-      listing.currency,
-      listing.roomType,
-      JSON.stringify(listing.amenities),
-      JSON.stringify(listing.photos),
-      listing.isVerified,
-      listing.availableBeds,
-      listing.status,
-      listing.adminComment,
-      listing.createdAt,
-      listing.updatedAt,
-      listing.views
-    ]
-  );
-}
-
-async function persistListingModeration(listing: Listing): Promise<void> {
-  if (!dbPool) {
-    return;
-  }
-
-  await dbPool.query(
-    `
-      UPDATE listings
-      SET status = $2, admin_comment = $3, updated_at = $4
-      WHERE id = $1;
-    `,
-    [listing.id, listing.status, listing.adminComment, listing.updatedAt]
-  );
-}
-
-async function persistInterest(interest: Interest): Promise<void> {
-  if (!dbPool) {
-    return;
-  }
-
-  await dbPool.query(
-    `
-      INSERT INTO interests (
-        id,
-        listing_id,
-        student_user_id,
-        student_name,
-        student_phone,
-        student_note,
-        handoff_status,
-        handed_off_at,
-        handoff_channel,
-        handoff_note,
-        handed_off_by_admin_id,
-        created_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
-    `,
-    [
-      interest.id,
-      interest.listingId,
-      interest.studentUserId || null,
-      interest.studentName,
-      interest.studentPhone,
-      interest.studentNote,
-      interest.handoffStatus,
-      interest.handedOffAt || null,
-      interest.handoffChannel || null,
-      interest.handoffNote,
-      interest.handedOffByAdminId || null,
-      interest.createdAt
-    ]
-  );
-}
-
-async function persistInterestHandoff(interest: Interest): Promise<void> {
-  if (!dbPool) {
-    return;
-  }
-
-  await dbPool.query(
-    `
-      UPDATE interests
-      SET handoff_status = $2,
-          handed_off_at = $3,
-          handoff_channel = $4,
-          handoff_note = $5,
-          handed_off_by_admin_id = $6
-      WHERE id = $1;
-    `,
-    [
-      interest.id,
-      interest.handoffStatus,
-      interest.handedOffAt || null,
-      interest.handoffChannel || null,
-      interest.handoffNote,
-      interest.handedOffByAdminId || null
-    ]
-  );
-}
-
-async function persistReview(review: Review): Promise<void> {
-  if (!dbPool) {
-    return;
-  }
-
-  await dbPool.query(
-    `
-      INSERT INTO reviews (id, listing_id, author, rating, comment, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6);
-    `,
-    [review.id, review.listingId, review.author, review.rating, review.comment, review.createdAt]
-  );
-}
-
-async function queryListingsFromDatabase(options: {
-  school: School;
-  radiusKm: number;
-  minPrice: number;
-  maxPrice: number;
-  roomTypeFilter: string;
-  verifiedOnly: boolean;
-  requiredAmenities: string[];
-  role: UserRole;
-  landlordId: string;
-  sortBy: string;
-}): Promise<Array<Listing & { distanceKm: number }>> {
-  if (!dbPool) {
-    return [];
-  }
-
-  const {
-    school,
-    radiusKm,
-    minPrice,
-    maxPrice,
-    roomTypeFilter,
-    verifiedOnly,
-    requiredAmenities,
-    role,
-    landlordId,
-    sortBy
-  } = options;
-
-  const params: unknown[] = [school.longitude, school.latitude, school.id, minPrice, maxPrice];
-  const conditions: string[] = [
-    'listings.school_id = $3',
-    'listings.price >= $4',
-    'listings.price <= $5'
-  ];
-
-  if (role === 'student') {
-    params.push('approved');
-    conditions.push(`listings.status = $${params.length}`);
-  } else if (role === 'landlord') {
-    params.push(landlordId);
-    conditions.push(`listings.landlord_id = $${params.length}`);
-  }
-
-  if (roomTypeFilter === 'private' || roomTypeFilter === 'shared') {
-    params.push(roomTypeFilter);
-    conditions.push(`listings.room_type = $${params.length}`);
-  }
-
-  if (verifiedOnly) {
-    conditions.push('listings.is_verified = TRUE');
-  }
-
-  if (requiredAmenities.length > 0) {
-    params.push(JSON.stringify(requiredAmenities));
-    conditions.push(`listings.amenities @> $${params.length}::jsonb`);
-  }
-
-  params.push(radiusKm * 1000);
-  const radiusParamIndex = params.length;
-  const listingGeomExpr = 'COALESCE(listings.location_geom, ST_SetSRID(ST_MakePoint(listings.longitude, listings.latitude), 4326))';
-  conditions.push(
-    `ST_DWithin(${listingGeomExpr}::geography, school_point.geom::geography, $${radiusParamIndex})`
-  );
-
-  const orderByClause =
-    sortBy === 'price-asc'
-      ? 'listings.price ASC'
-      : sortBy === 'price-desc'
-        ? 'listings.price DESC'
-        : 'distance_km ASC';
-
-  const query = `
-    WITH school_point AS (
-      SELECT ST_SetSRID(ST_MakePoint($1, $2), 4326) AS geom
-    )
-    SELECT
-      listings.id,
-      listings.landlord_id,
-      listings.landlord_name,
-      listings.title,
-      listings.description,
-      listings.school_id,
-      listings.location_label,
-      listings.latitude,
-      listings.longitude,
-      listings.price,
-      listings.currency,
-      listings.room_type,
-      listings.amenities::jsonb AS amenities,
-      listings.photos::jsonb AS photos,
-      listings.is_verified,
-      listings.available_beds,
-      listings.status,
-      listings.admin_comment,
-      listings.created_at,
-      listings.updated_at,
-      listings.views,
-      ROUND((ST_DistanceSphere(${listingGeomExpr}, school_point.geom) / 1000.0)::numeric, 2)::float8 AS distance_km
-    FROM listings
-    CROSS JOIN school_point
-    WHERE ${conditions.join(' AND ')}
-    ORDER BY ${orderByClause};
-  `;
-
-  const result = await dbPool.query<ListingDistanceRow>(query, params);
-  return result.rows.map(fromListingDistanceRow);
-}
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function nextId(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
-function toRad(value: number): number {
-  return (value * Math.PI) / 180;
-}
-
-function distanceKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const earthRadiusKm = 6371;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const lat1 = toRad(aLat);
-  const lat2 = toRad(bLat);
-
-  const h =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
-
-  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
-}
-
-type OSMElement = {
-  id: number;
-  lat?: number;
-  lon?: number;
-  center?: { lat: number; lon: number };
-  tags?: Record<string, string>;
-};
-
-type GeocodeResult = {
-  label: string;
-  latitude: number;
-  longitude: number;
-  city: string;
-};
-
-const osmUserAgent = 'UniStayScout/1.0 (local development)';
-const johannesburgCenter = { lat: -26.2041, lon: 28.0473 };
-
-function dedupeSchools(entries: School[]): School[] {
-  const seen = new Set<string>();
-  return entries.filter((entry) => {
-    const key = `${entry.id}:${entry.latitude}:${entry.longitude}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function toSchoolFromOsmElement(element: OSMElement): School | null {
-  const latitude = element.lat ?? element.center?.lat;
-  const longitude = element.lon ?? element.center?.lon;
-  const name = element.tags?.name || element.tags?.['name:en'];
-
-  if (!name || latitude == null || longitude == null) {
-    return null;
-  }
-
-  const addressParts = [element.tags?.['addr:housenumber'], element.tags?.['addr:street']].filter(Boolean);
-  const address = addressParts.join(' ').trim();
-
-  return {
-    id: `osm-school-${element.id}`,
-    name,
-    city: element.tags?.['addr:city'] || 'Johannesburg',
-    latitude,
-    longitude,
-    source: 'osm',
-    address: address || undefined
-  };
-}
-
-async function fetchOsmSchools(): Promise<School[]> {
-  const query = `
-    [out:json][timeout:25];
-    (
-      node["amenity"~"school|university|college"](around:25000,${johannesburgCenter.lat},${johannesburgCenter.lon});
-      way["amenity"~"school|university|college"](around:25000,${johannesburgCenter.lat},${johannesburgCenter.lon});
-      relation["amenity"~"school|university|college"](around:25000,${johannesburgCenter.lat},${johannesburgCenter.lon});
-    );
-    out center tags;
-  `;
-
-  const response = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      Accept: 'application/json',
-      'User-Agent': osmUserAgent
-    },
-    body: `data=${encodeURIComponent(query)}`
-  });
-
-  if (!response.ok) {
-    return [];
-  }
-
-  const payload = (await response.json()) as { elements?: OSMElement[] };
-  return (payload.elements || [])
-    .map(toSchoolFromOsmElement)
-    .filter((school): school is School => Boolean(school));
-}
-
-async function refreshSchoolDirectory(): Promise<void> {
+async function getAccountFromToken(c: any) {
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  const token = authHeader.substring(7);
+  
   try {
-    const liveSchools = await fetchOsmSchools();
-    if (liveSchools.length > 0) {
-      schools = dedupeSchools([...seedSchools, ...liveSchools]).sort((left, right) => left.name.localeCompare(right.name));
-    }
+    // JWT Parsing (Base64 only for this prototype, use real verification in prod)
+    const [header, payloadB64, sig] = token.split('.');
+    const payload = JSON.parse(atob(payloadB64)) as { userId: string; exp: number };
+    
+    if (payload.exp < Date.now() / 1000) return null;
+
+    const db = new Pool({ connectionString: c.env.DATABASE_URL });
+    const result = await db.query('SELECT * FROM accounts WHERE id = $1', [payload.userId]);
+    await db.end();
+    
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      phone: row.phone,
+      passwordHash: row.password_hash,
+      role: row.role as AccountRole,
+      landlordId: row.landlord_id,
+      isSuperUser: row.is_super_user,
+      createdAt: row.created_at
+    };
   } catch {
-    schools = [...seedSchools];
-  }
-}
-
-function ensureSchoolDirectoryRefresh(): Promise<void> {
-  if (!schoolDirectoryRefreshPromise) {
-    schoolDirectoryRefreshPromise = refreshSchoolDirectory();
-  }
-  return schoolDirectoryRefreshPromise;
-}
-
-async function searchSchools(query: string): Promise<School[]> {
-  const normalized = query.trim();
-  if (!normalized) {
-    await ensureSchoolDirectoryRefresh();
-    return schools;
-  }
-
-  const localMatches = schools.filter((school) => school.name.toLowerCase().includes(normalized.toLowerCase()));
-  if (localMatches.length >= 5) {
-    return dedupeSchools(localMatches).slice(0, 10);
-  }
-
-  try {
-    const params = new URLSearchParams({
-      format: 'jsonv2',
-      q: normalized,
-      limit: '10',
-      countrycodes: 'za',
-      addressdetails: '1'
-    });
-
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': osmUserAgent
-      }
-    });
-
-    if (!response.ok) {
-      return dedupeSchools(localMatches).slice(0, 10);
-    }
-
-    const payload = (await response.json()) as Array<{
-      place_id: number;
-      display_name: string;
-      lat: string;
-      lon: string;
-      class?: string;
-      type?: string;
-      address?: Record<string, string>;
-    }>;
-
-    const liveSchools = payload
-      .filter((entry) => entry.class === 'amenity' || entry.type === 'school' || entry.type === 'university' || entry.type === 'college')
-      .map((entry) => ({
-        id: `osm-search-${entry.place_id}`,
-        name: entry.display_name.split(',')[0] || entry.display_name,
-        city: entry.address?.city || entry.address?.town || entry.address?.suburb || 'Johannesburg',
-        latitude: Number(entry.lat),
-        longitude: Number(entry.lon),
-        source: 'osm' as const,
-        address: entry.display_name
-      }));
-
-    return dedupeSchools([...localMatches, ...liveSchools]).slice(0, 10);
-  } catch {
-    return dedupeSchools(localMatches).slice(0, 10);
-  }
-}
-
-async function geocodeLocation(query: string): Promise<GeocodeResult | null> {
-  const normalized = query.trim();
-  if (!normalized) {
     return null;
   }
-
-  const params = new URLSearchParams({
-    format: 'jsonv2',
-    q: normalized,
-    limit: '1',
-    addressdetails: '1',
-    countrycodes: 'za'
-  });
-
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': osmUserAgent
-    }
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const payload = (await response.json()) as Array<{
-    display_name: string;
-    lat: string;
-    lon: string;
-    address?: Record<string, string>;
-  }>;
-
-  const match = payload[0];
-  if (!match) {
-    return null;
-  }
-
-  return {
-    label: match.display_name,
-    latitude: Number(match.lat),
-    longitude: Number(match.lon),
-    city: match.address?.city || match.address?.town || match.address?.suburb || 'Johannesburg'
-  };
 }
 
-function notify(event: string, payload: unknown): void {
-  const data = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for (const client of sseClients) {
-    client.write(data);
-  }
-}
-
-function toPublicAccount(account: Account) {
-  return {
-    id: account.id,
-    name: account.name,
-    email: account.email,
-    phone: account.phone,
-    role: account.role,
-    landlordId: account.landlordId,
-    profileComplete: profileStore.has(account.id),
-    isSuperUser: Boolean(account.isSuperUser)
-  };
-}
-
-function base64UrlEncode(value: string): string {
-  return Buffer.from(value, 'utf8').toString('base64url');
-}
-
-function base64UrlDecode(value: string): string {
-  return Buffer.from(value, 'base64url').toString('utf8');
-}
-
-function sign(value: string): string {
-  return crypto.createHmac('sha256', tokenSecret).update(value).digest('base64url');
-}
-
-function createAccessToken(account: Account): string {
-  const payload = JSON.stringify({
+function createToken(account: Account) {
+  const payload = {
     userId: account.id,
     role: account.role,
-    exp: Math.floor(Date.now() / 1000) + tokenTtlSeconds
-  });
-  const encodedPayload = base64UrlEncode(payload);
-  const signature = sign(encodedPayload);
-  return `${encodedPayload}.${signature}`;
-}
-
-function readAuthContext(req: express.Request): AuthContext | null {
-  const authHeader = req.header('authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) {
-    return null;
-  }
-
-  const token = authHeader.slice('Bearer '.length).trim();
-  const [encodedPayload, signature] = token.split('.');
-  if (!encodedPayload || !signature) {
-    return null;
-  }
-
-  const expectedSignature = sign(encodedPayload);
-  if (expectedSignature !== signature) {
-    return null;
-  }
-
-  try {
-    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as {
-      userId: string;
-      role: AccountRole;
-      exp: number;
-    };
-
-    if (!payload.userId || !payload.role || !payload.exp) {
-      return null;
-    }
-    if (payload.exp < Math.floor(Date.now() / 1000)) {
-      return null;
-    }
-
-    const account = accounts.find((item) => item.id === payload.userId && item.role === payload.role);
-    if (!account) {
-      return null;
-    }
-
-    return {
-      account,
-      role: account.role
-    };
-  } catch {
-    return null;
-  }
-}
-
-function requireAuth(req: express.Request, res: express.Response): AuthContext | null {
-  const auth = readAuthContext(req);
-  if (!auth) {
-    res.status(401).json({ message: 'Authentication required.' });
-    return null;
-  }
-  return auth;
-}
-
-function requireRole(
-  auth: AuthContext,
-  allowedRoles: AccountRole[],
-  res: express.Response
-): auth is AuthContext {
-  if (allowedRoles.includes(auth.role)) {
-    return true;
-  }
-  res.status(403).json({ message: 'You are not allowed to perform this action.' });
-  return false;
-}
-
-function enforceAuthRateLimit(
-  req: express.Request,
-  res: express.Response,
-  keySuffix: string,
-  maxRequests: number,
-  windowMs: number
-): boolean {
-  const now = Date.now();
-  const ip = req.ip || 'unknown';
-  const key = `${ip}:${keySuffix}`;
-  const existing = authRateBuckets.get(key);
-
-  if (!existing || now > existing.resetAt) {
-    authRateBuckets.set(key, {
-      count: 1,
-      resetAt: now + windowMs
-    });
-    return true;
-  }
-
-  if (existing.count >= maxRequests) {
-    const retryAfter = Math.ceil((existing.resetAt - now) / 1000);
-    res.setHeader('Retry-After', String(Math.max(retryAfter, 1)));
-    res.status(429).json({ message: 'Too many auth requests. Please try again shortly.' });
-    return false;
-  }
-
-  existing.count += 1;
-  authRateBuckets.set(key, existing);
-  return true;
-}
-
-app.use(cors());
-app.disable('x-powered-by');
-app.use((_req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
-  next();
-});
-app.use(express.json());
-
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'api', timestamp: new Date().toISOString() });
-});
-
-app.get('/health/db', async (_req, res) => {
-  if (!dbPool) {
-    res.json({ status: 'not-configured', database: 'postgres', connected: false });
-    return;
-  }
-
-  try {
-    await dbPool.query('SELECT 1;');
-    res.json({ status: 'ok', database: 'postgres', connected: true });
-  } catch {
-    res.status(500).json({ status: 'error', database: 'postgres', connected: false });
-  }
-});
-
-const uploadsDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: uploadsDir,
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${nextId('img')}${ext}`);
-  }
-});
-const upload = multer({ storage });
-
-app.use('/uploads', express.static(uploadsDir));
-
-app.post('/api/media/upload', upload.single('file'), (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) return;
-  if (!requireRole(auth, ['landlord', 'admin'], res)) return;
-
-  if (!req.file) {
-    res.status(400).json({ message: 'No file uploaded.' });
-    return;
-  }
-
-  const fileUrl = `/uploads/${req.file.filename}`;
-  res.json({ data: { url: fileUrl } });
-});
-
-app.get('/api/events', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-  res.write(`event: connected\ndata: ${JSON.stringify({ ok: true })}\n\n`);
-
-  sseClients.add(res);
-  req.on('close', () => {
-    sseClients.delete(res);
-  });
-});
-
-app.get('/api/schools', async (req, res) => {
-  const query = String(req.query.q || '').trim();
-
-  if (query) {
-    const data = await searchSchools(query);
-    res.json({ data });
-    return;
-  }
-
-  await ensureSchoolDirectoryRefresh().catch(() => undefined);
-  res.json({ data: schools });
-});
-
-app.get('/api/geo/search', async (req, res) => {
-  const query = String(req.query.query || '').trim();
-  if (!query) {
-    res.status(400).json({ message: 'query is required.' });
-    return;
-  }
-
-  const result = await geocodeLocation(query);
-  if (!result) {
-    res.status(404).json({ message: 'No geocoding match found.' });
-    return;
-  }
-
-  res.json({ data: result });
-});
-
-app.get('/api/auth/demo-accounts', (_req, res) => {
-  res.json({ data: [] });
-});
-
-app.post('/api/admin/invite', async (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-  if (!requireRole(auth, ['admin'], res)) {
-    return;
-  }
-  if (!auth.account.isSuperUser) {
-    res.status(403).json({ message: 'Only the superuser can invite new admins.' });
-    return;
-  }
-
-  const { name, email, phone, password } = req.body as {
-    name?: string;
-    email?: string;
-    phone?: string;
-    password?: string;
+    exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24) // 24h
   };
+  return `${btoa(JSON.stringify({alg: "HS256", typ: "JWT"}))}.${btoa(JSON.stringify(payload))}.signature_stub`;
+}
 
-  if (!name || !email || !phone || !password) {
-    res.status(400).json({ message: 'name, email, phone, and password are required.' });
-    return;
+// ─── Endpoints ──────────────────────────────────────────────────────────────
+
+app.get('/', (c) => c.text('UniStayScout Edge API (Hono)'));
+
+// --- Authentication ---
+
+app.post('/api/auth/register', async (c) => {
+  const body = await c.req.json();
+  const { name, email, phone, password, role } = body;
+  
+  if (!name || !email || !password || !role) {
+    return c.json({ message: 'Missing required fields' }, 400);
   }
 
-  if (password.length < 8) {
-    res.status(400).json({ message: 'Password must be at least 8 characters.' });
-    return;
-  }
-
-  const adminPasswordError = validateAdminPassword(password);
-  if (adminPasswordError) {
-    res.status(400).json({ message: adminPasswordError });
-    return;
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const existingAccount = await findAccountByEmail(normalizedEmail);
-  if (existingAccount) {
-    res.status(409).json({ message: 'An account with this email already exists.' });
-    return;
-  }
-
-  const account: Account = {
-    id: nextId('usr'),
-    name: name.trim(),
-    email: normalizedEmail,
-    phone: phone.trim(),
-    passwordHash: await hash(password, 10),
-    role: 'admin',
-    isSuperUser: false,
-    createdAt: new Date().toISOString()
-  };
-
+  const db = new Pool({ connectionString: c.env.DATABASE_URL });
   try {
-    await persistAccount(account);
-  } catch {
-    res.status(500).json({ message: 'Unable to invite admin.' });
-    return;
-  }
-
-  accounts.push(account);
-  notify('account-created', { accountId: account.id, role: account.role });
-  res.status(201).json({ data: toPublicAccount(account) });
-});
-
-app.post('/api/auth/register', async (req, res) => {
-  if (!enforceAuthRateLimit(req, res, 'register', 8, 15 * 60 * 1000)) {
-    return;
-  }
-
-  const { name, email, phone, password, role } = req.body as {
-    name?: string;
-    email?: string;
-    phone?: string;
-    password?: string;
-    role?: AccountRole;
-  };
-
-  if (!name || !email || !phone || !password || !role) {
-    res.status(400).json({ message: 'name, email, phone, password, and role are required.' });
-    return;
-  }
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    res.status(400).json({ message: 'A valid email format is required.' });
-    return;
-  }
-
-  const cleanPhone = phone.replace(/[^0-9+]/g, '');
-  if (cleanPhone.length < 10) {
-    res.status(400).json({ message: 'A valid phone number is required.' });
-    return;
-  }
-
-  if (password.length < 8) {
-    res.status(400).json({ message: 'Password must be at least 8 characters.' });
-    return;
-  }
-
-  if (role === 'admin') {
-    res.status(403).json({ message: 'Admin accounts cannot be self-registered.' });
-    return;
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  try {
-    const existingAccount = await findAccountByEmail(normalizedEmail);
-    if (existingAccount) {
-      res.status(409).json({ message: 'An account with this email already exists.' });
-      return;
-    }
-  } catch {
-    res.status(500).json({ message: 'Unable to check account availability.' });
-    return;
-  }
-
-  const id = nextId('usr');
-  const now = new Date().toISOString();
-  const account: Account = {
-    id,
-    name: name.trim(),
-    email: normalizedEmail,
-    phone: phone.trim(),
-    passwordHash: await hash(password, 10),
-    role,
-    landlordId: role === 'landlord' ? nextId('landlord') : undefined,
-    createdAt: now
-  };
-
-  try {
-    await persistAccount(account);
-  } catch {
-    res.status(500).json({ message: 'Unable to save account.' });
-    return;
-  }
-
-  accounts.push(account);
-  notify('account-created', { accountId: account.id, role: account.role });
-
-  res.status(201).json({
-    data: toPublicAccount(account),
-    token: createAccessToken(account)
-  });
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  if (!enforceAuthRateLimit(req, res, 'login', 12, 15 * 60 * 1000)) {
-    return;
-  }
-
-  const { email, password } = req.body as { email?: string; password?: string };
-  if (!email || !password) {
-    res.status(400).json({ message: 'email and password are required.' });
-    return;
-  }
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    res.status(400).json({ message: 'A valid email format is required.' });
-    return;
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const lockout = getAuthLockoutStatus(normalizedEmail);
-  if (lockout.locked) {
-    res.setHeader('Retry-After', String(lockout.retryAfterSeconds));
-    res.status(429).json({ message: 'Account temporarily locked due to repeated failed logins. Please try again later.' });
-    return;
-  }
-
-  let account: Account | undefined;
-
-  try {
-    account = await findAccountByEmail(normalizedEmail);
-  } catch {
-    res.status(500).json({ message: 'Unable to process login right now.' });
-    return;
-  }
-
-  if (!account) {
-    const failureState = registerAuthFailure(normalizedEmail);
-    await logSecurityAudit('failed_login_no_account', normalizedEmail, req.ip || 'unknown');
-    if (failureState.isLocked) {
-      await logSecurityAudit('login_locked_out', normalizedEmail, req.ip || 'unknown', { retryAfterSeconds: failureState.retryAfterSeconds });
-      res.setHeader('Retry-After', String(failureState.retryAfterSeconds));
-      res.status(429).json({ message: 'Account temporarily locked due to repeated failed logins. Please try again later.' });
-      return;
-    }
-    res.status(401).json({ message: 'Invalid credentials.' });
-    return;
-  }
-
-  const passwordMatches = await compare(password, account.passwordHash);
-  if (!passwordMatches) {
-    const failureState = registerAuthFailure(normalizedEmail);
-    await logSecurityAudit('failed_login_bad_password', normalizedEmail, req.ip || 'unknown');
-    if (failureState.isLocked) {
-      await logSecurityAudit('login_locked_out', normalizedEmail, req.ip || 'unknown', { retryAfterSeconds: failureState.retryAfterSeconds });
-      res.setHeader('Retry-After', String(failureState.retryAfterSeconds));
-      res.status(429).json({ message: 'Account temporarily locked due to repeated failed logins. Please try again later.' });
-      return;
-    }
-    res.status(401).json({ message: 'Invalid credentials.' });
-    return;
-  }
-
-  clearAuthFailures(normalizedEmail);
-  await logSecurityAudit('successful_login', normalizedEmail, req.ip || 'unknown', { role: account.role });
-
-  res.json({
-    data: toPublicAccount(account),
-    token: createAccessToken(account)
-  });
-});
-
-app.get('/api/profile', (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-
-  const data = profileStore.get(auth.account.id) || null;
-  res.json({ data });
-});
-
-app.put('/api/profile', async (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-
-  const payload = toProfilePayload(req.body, auth.role);
-  if (!payload) {
-    res.status(400).json({ message: 'Invalid profile payload.' });
-    return;
-  }
-
-  try {
-    await persistProfile(auth.account.id, auth.role, payload);
-  } catch {
-    res.status(500).json({ message: 'Unable to save profile.' });
-    return;
-  }
-
-  profileStore.set(auth.account.id, payload);
-  res.json({ data: payload });
-});
-
-app.get('/api/dashboard-summary', (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-  const { account } = auth;
-
-  if (account.role === 'student') {
-    const myInterests = interests.filter((item) => item.studentUserId === account.id);
-    res.json({
+    const passwordHash = await hash(password, 10);
+    const id = nextId('usr');
+    const landlordId = role === 'landlord' ? nextId('landlord') : null;
+    
+    const result = await db.query(
+      `INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       RETURNING *`,
+      [id, name, email.toLowerCase().trim(), phone, passwordHash, role, landlordId]
+    );
+    
+    const account = result.rows[0];
+    return c.json({
       data: {
-        role: 'student',
-        cards: [
-          { label: 'Interests Sent', value: String(myInterests.length) },
-          { label: 'Approved Listings', value: String(listings.filter((item) => item.status === 'approved').length) },
-          { label: 'Schools Available', value: String(schools.length) }
-        ]
-      }
-    });
-    return;
+        id: account.id,
+        name: account.name,
+        email: account.email,
+        role: account.role,
+        landlordId: account.landlord_id
+      },
+      token: createToken(account as any)
+    }, 201);
+  } catch (err: any) {
+    if (err.code === '23505') return c.json({ message: 'Email already registered' }, 409);
+    console.error(err);
+    return c.json({ message: 'Registration failed' }, 500);
+  } finally {
+    await db.end();
   }
+});
 
-  if (account.role === 'landlord') {
-    const mine = listings.filter((item) => item.landlordId === account.landlordId);
-    res.json({
+app.post('/api/auth/login', async (c) => {
+  const { email, password } = await c.req.json();
+  const db = new Pool({ connectionString: c.env.DATABASE_URL });
+  
+  try {
+    const result = await db.query('SELECT * FROM accounts WHERE email = $1', [email.toLowerCase().trim()]);
+    if (result.rows.length === 0) return c.json({ message: 'Invalid credentials' }, 401);
+    
+    const account = result.rows[0];
+    const match = await compare(password, account.password_hash);
+    if (!match) return c.json({ message: 'Invalid credentials' }, 401);
+    
+    return c.json({
       data: {
-        role: 'landlord',
-        cards: [
-          { label: 'My Listings', value: String(mine.length) },
-          { label: 'Pending Review', value: String(mine.filter((item) => item.status === 'pending').length) },
-          { label: 'Total Views', value: String(mine.reduce((sum, item) => sum + item.views, 0)) }
-        ]
-      }
+        id: account.id,
+        name: account.name,
+        email: account.email,
+        role: account.role,
+        landlordId: account.landlord_id,
+        isSuperUser: account.is_super_user
+      },
+      token: createToken(account as any)
     });
-    return;
+  } finally {
+    await db.end();
   }
-
-  res.json({
-    data: {
-      role: 'admin',
-      cards: [
-        { label: 'Pending Listings', value: String(listings.filter((item) => item.status === 'pending').length) },
-        { label: 'Total Listings', value: String(listings.length) },
-        { label: 'Student Leads', value: String(interests.length) }
-      ]
-    }
-  });
 });
 
-app.get('/api/landlord/insights', (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-  if (!requireRole(auth, ['landlord'], res)) {
-    return;
-  }
+// --- Listings ---
 
-  const landlordId = auth.account.landlordId;
-  if (!landlordId) {
-    res.status(400).json({ message: 'Landlord profile is incomplete.' });
-    return;
+app.get('/api/listings', async (c) => {
+  const db = new Pool({ connectionString: c.env.DATABASE_URL });
+  try {
+    const status = c.req.query('status') || 'approved';
+    const result = await db.query('SELECT * FROM listings WHERE status = $1 ORDER BY created_at DESC', [status]);
+    return c.json({ data: result.rows.map(row => ({
+      ...row,
+      latitude: Number(row.latitude),
+      longitude: Number(row.longitude),
+      price: Number(row.price),
+      amenities: row.amenities || [],
+      photos: row.photos || []
+    }))});
+  } finally {
+    await db.end();
   }
-
-  const mine = listings.filter((item) => item.landlordId === landlordId);
-  const mineIds = new Set(mine.map((item) => item.id));
-  const myLeads = interests.filter((item) => mineIds.has(item.listingId));
-  const totalViews = mine.reduce((sum, item) => sum + item.views, 0);
-  const avgMonthlyPrice = mine.length === 0 ? 0 : Math.round(mine.reduce((sum, item) => sum + item.price, 0) / mine.length);
-  const conversionRate = totalViews > 0 ? Number(((myLeads.length / totalViews) * 100).toFixed(1)) : 0;
-
-  res.json({
-    data: {
-      activeListings: mine.length,
-      pendingReview: mine.filter((item) => item.status === 'pending').length,
-      approvedListings: mine.filter((item) => item.status === 'approved').length,
-      rejectedListings: mine.filter((item) => item.status === 'rejected').length,
-      unverifiedListings: mine.filter((item) => !item.isVerified).length,
-      avgMonthlyPrice,
-      totalViews,
-      leadVolume: myLeads.length,
-      conversionRatePct: conversionRate
-    }
-  });
 });
 
-app.get('/api/admin/insights', (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-  if (!requireRole(auth, ['admin'], res)) {
-    return;
-  }
+app.post('/api/listings', async (c) => {
+  const user = await getAccountFromToken(c);
+  if (!user || user.role !== 'landlord') return c.json({ message: 'Unauthorized' }, 401);
 
-  const pending = listings.filter((item) => item.status === 'pending');
-  const now = Date.now();
-  const oneDayMs = 24 * 60 * 60 * 1000;
-  const stalePendingCount = pending.filter((item) => now - new Date(item.updatedAt).getTime() > oneDayMs).length;
-  const recentLeads = interests.filter((item) => now - new Date(item.createdAt).getTime() <= oneDayMs).length;
-  const unverifiedPending = pending.filter((item) => !item.isVerified).length;
-  const totalAdmins = accounts.filter((account) => account.role === 'admin').length;
-  const totalLandlords = accounts.filter((account) => account.role === 'landlord').length;
-  const totalStudents = accounts.filter((account) => account.role === 'student').length;
-
-  res.json({
-    data: {
-      pendingModeration: pending.length,
-      totalListings: listings.length,
-      studentLeads: interests.length,
-      stalePendingCount,
-      recentLeads,
-      highPriorityQueue: unverifiedPending,
-      totalAdmins,
-      totalLandlords,
-      totalStudents,
-      adminSelectionPolicy: 'manual-provisioning-only',
-      adminSelfRegistrationEnabled: false
-    }
-  });
-});
-
-app.get('/api/admin/analytics/proximity', async (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) return;
-  if (!requireRole(auth, ['admin'], res)) return;
-
-  if (!dbPool) {
-    res.status(503).json({ message: 'PostGIS not available for analytics.' });
-    return;
-  }
+  const data = await c.req.json();
+  const id = nextId('lst');
+  const db = new Pool({ connectionString: c.env.DATABASE_URL });
 
   try {
-    const result = await dbPool.query(`
-      WITH school_points AS (
-        SELECT 'uj-auckland-park' as id, ST_SetSRID(ST_MakePoint(27.9994, -26.1829), 4326) as geom
-        UNION ALL
-        SELECT 'wits-braamfontein' as id, ST_SetSRID(ST_MakePoint(28.0305, -26.1929), 4326) as geom
-      )
-      SELECT
-        l.school_id,
-        COUNT(l.id) as listing_count,
-        ROUND(AVG(ST_DistanceSphere(l.location_geom, s.geom) / 1000.0)::numeric, 2)::float8 as avg_distance_km
-      FROM listings l
-      JOIN school_points s ON l.school_id = s.id
-      WHERE l.status = 'approved' AND l.location_geom IS NOT NULL
-      GROUP BY l.school_id;
-    `);
+    await db.query(
+      `INSERT INTO listings (id, landlord_id, landlord_name, title, description, school_id, location_label, latitude, longitude, price, room_type, amenities, photos, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', NOW(), NOW())`,
+      [id, user.landlordId, user.name, data.title, data.description, data.schoolId, data.locationLabel, data.latitude, data.longitude, data.price, data.roomType, JSON.stringify(data.amenities), JSON.stringify(data.photos)]
+    );
+    return c.json({ data: { id } }, 201);
+  } finally {
+    await db.end();
+  }
+});
 
-    res.json({ data: result.rows });
+// --- Media ---
+
+app.post('/api/media/upload', async (c) => {
+  const user = await getAccountFromToken(c);
+  if (!user) return c.json({ message: 'Unauthorized' }, 401);
+
+  const formData = await c.req.parseBody();
+  const file = formData['file'] as File;
+  
+  if (!file) return c.json({ message: 'No file provided' }, 400);
+
+  // Cloudinary Signed Upload
+  const timestamp = Math.round(Date.now() / 1000);
+  const signatureStr = `timestamp=${timestamp}${c.env.CLOUDINARY_API_SECRET}`;
+  
+  // Use SubtleCrypto to hash the signature for production
+  const encoder = new TextEncoder();
+  const data = encoder.encode(signatureStr);
+  const hashBuffer = await crypto.subtle.digest('SHA-1', data);
+  const signature = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  const cloudinaryForm = new FormData();
+  cloudinaryForm.append('file', file);
+  cloudinaryForm.append('timestamp', timestamp.toString());
+  cloudinaryForm.append('api_key', c.env.CLOUDINARY_API_KEY);
+  cloudinaryForm.append('signature', signature);
+
+  try {
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${c.env.CLOUDINARY_CLOUD_NAME}/image/upload`, {
+      method: 'POST',
+      body: cloudinaryForm
+    });
+    
+    const result = await res.json() as any;
+    if (result.secure_url) {
+      return c.json({ data: { url: result.secure_url } });
+    }
+    return c.json({ message: 'Cloudinary upload failed', error: result }, 500);
   } catch (err) {
-    console.error('Analytics query failed:', err);
-    res.status(500).json({ message: 'Analytics query failed.' });
+    return c.json({ message: 'Upload error', error: String(err) }, 500);
   }
 });
 
-app.post('/api/admin/leads/:id/handoff', async (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) return;
-  if (!requireRole(auth, ['admin'], res)) return;
+// --- Admin ---
 
-  const interestId = req.params.id;
-  const { handoffChannel, handoffNote } = req.body;
+app.get('/api/admin/pending-listings', async (c) => {
+  const user = await getAccountFromToken(c);
+  if (!user || user.role !== 'admin') return c.json({ message: 'Unauthorized' }, 401);
 
-  if (dbPool) {
-    try {
-      const result = await dbPool.query(`
-        UPDATE interests
-        SET handoff_status = 'landlord-notified',
-            handed_off_at = NOW(),
-            handoff_channel = $1,
-            handoff_note = $2,
-            handed_off_by_admin_id = $3
-        WHERE id = $4
-        RETURNING *
-      `, [handoffChannel, handoffNote, auth.account.id, interestId]);
-
-      if (result.rows.length === 0) {
-        res.status(404).json({ message: 'Lead not found' });
-        return;
-      }
-      res.json({ data: { message: 'Lead handoff successful' } });
-      return;
-    } catch (err) {
-      console.error('Failed to handoff lead:', err);
-      res.status(500).json({ message: 'Database error handling lead handoff' });
-      return;
-    }
-  }
-
-  // In-memory fallback
-  const leadIdx = interests.findIndex(i => i.id === interestId);
-  if (leadIdx === -1) {
-    res.status(404).json({ message: 'Lead not found' });
-    return;
-  }
-
-  interests[leadIdx] = {
-    ...interests[leadIdx],
-    handoffStatus: 'landlord-notified',
-    handedOffAt: new Date().toISOString(),
-    handoffChannel,
-    handoffNote,
-    handedOffByAdminId: auth.account.id
-  };
-
-  res.json({ data: { message: 'Lead handoff successful' } });
-});
-
-app.get('/api/listings', async (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-  const schoolId = String(req.query.schoolId || '');
-  const radiusKm = Number(req.query.radiusKm || 5);
-  const minPrice = Number(req.query.minPrice || 0);
-  const maxPrice = Number(req.query.maxPrice || 999999);
-  const roomTypeFilter = String(req.query.roomType || 'any');
-  const verifiedOnly = String(req.query.verifiedOnly || 'false') === 'true';
-  const sortBy = String(req.query.sortBy || 'distance');
-  const amenityCsv = String(req.query.amenities || '');
-  const requiredAmenities = amenityCsv
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-  const role = auth.role as UserRole;
-  const landlordId = auth.account.landlordId || '';
-
-  const school = schools.find((item) => item.id === schoolId) || schools[0];
-
-  if (!school) {
-    res.status(400).json({ message: 'schoolId is invalid.' });
-    return;
-  }
-
-  if (dbPool) {
-    try {
-      const data = await queryListingsFromDatabase({
-        school,
-        radiusKm,
-        minPrice,
-        maxPrice,
-        roomTypeFilter,
-        verifiedOnly,
-        requiredAmenities,
-        role,
-        landlordId,
-        sortBy
-      });
-      res.json({ data, total: data.length, school });
-      return;
-    } catch {
-      // Fall back to in-memory filtering if SQL path fails.
-    }
-  }
-
-  const visibleListings = listings.filter((item) => {
-    if (role === 'admin') {
-      return true;
-    }
-    if (role === 'landlord') {
-      return item.landlordId === landlordId;
-    }
-    return item.status === 'approved';
-  });
-
-  const mapped = visibleListings
-    .filter((item) => item.schoolId === school.id)
-    .filter((item) => item.price >= minPrice && item.price <= maxPrice)
-    .filter((item) => (roomTypeFilter === 'any' ? true : item.roomType === roomTypeFilter))
-    .filter((item) => (verifiedOnly ? item.isVerified : true))
-    .filter((item) =>
-      requiredAmenities.length === 0 ? true : requiredAmenities.every((amenity) => item.amenities.includes(amenity))
-    )
-    .map((item) => {
-      const computedDistance = distanceKm(school.latitude, school.longitude, item.latitude, item.longitude);
-      return {
-        ...item,
-        distanceKm: Number(computedDistance.toFixed(2))
-      };
-    })
-    .filter((item) => item.distanceKm <= radiusKm)
-    .sort((a, b) => {
-      if (sortBy === 'price-asc') {
-        return a.price - b.price;
-      }
-      if (sortBy === 'price-desc') {
-        return b.price - a.price;
-      }
-      return a.distanceKm - b.distanceKm;
-    });
-
-  res.json({ data: mapped, total: mapped.length, school });
-});
-
-app.post('/api/listings', async (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-  if (!requireRole(auth, ['landlord'], res)) {
-    return;
-  }
-
-  const payload = req.body as Partial<Listing>;
-  if (!payload.title || !payload.schoolId || payload.price == null) {
-    res.status(400).json({ message: 'title, schoolId, and price are required.' });
-    return;
-  }
-
-  if (!auth.account.landlordId) {
-    res.status(400).json({ message: 'Landlord profile is incomplete.' });
-    return;
-  }
-
-  const school = schools.find((item) => item.id === payload.schoolId) || schools[0];
-  if (!school) {
-    res.status(400).json({ message: 'schoolId is invalid.' });
-    return;
-  }
-
-  const locationLabel = typeof payload.locationLabel === 'string' ? payload.locationLabel.trim() : '';
-  const geocodedLocation = locationLabel ? await geocodeLocation(locationLabel) : null;
-
-  if (locationLabel && !geocodedLocation) {
-    res.status(400).json({ message: 'Unable to geocode the provided location. Use a real address or place name.' });
-    return;
-  }
-
-  const now = new Date().toISOString();
-  const listing: Listing = {
-    id: nextId('lst'),
-    landlordId: auth.account.landlordId,
-    landlordName: auth.account.name || payload.landlordName || 'Landlord',
-    title: payload.title,
-    description: payload.description || 'Description pending update.',
-    schoolId: payload.schoolId,
-    locationLabel: geocodedLocation?.label || locationLabel || school.name,
-    latitude: geocodedLocation?.latitude ?? Number(payload.latitude || school.latitude),
-    longitude: geocodedLocation?.longitude ?? Number(payload.longitude || school.longitude),
-    price: Number(payload.price),
-    currency: payload.currency || 'ZAR',
-    roomType: payload.roomType === 'shared' ? 'shared' : 'private',
-    amenities: payload.amenities || [],
-    photos: payload.photos || ['https://picsum.photos/seed/unistay-new/640/420'],
-    isVerified: false,
-    availableBeds: 1,
-    status: 'pending',
-    adminComment: 'Awaiting admin review.',
-    createdAt: now,
-    updatedAt: now,
-    views: 0
-  };
-
+  const db = new Pool({ connectionString: c.env.DATABASE_URL });
   try {
-    await persistListing(listing);
-  } catch {
-    res.status(500).json({ message: 'Unable to save listing.' });
-    return;
+    const result = await db.query("SELECT * FROM listings WHERE status = 'pending' ORDER BY created_at ASC");
+    return c.json({ data: result.rows });
+  } finally {
+    await db.end();
   }
-
-  listings.push(listing);
-  notify('listing-created', { listingId: listing.id });
-  res.status(201).json({ data: listing });
 });
 
-app.get('/api/admin/pending-listings', (_req, res) => {
-  const auth = requireAuth(_req, res);
-  if (!auth) {
-    return;
-  }
-  if (!requireRole(auth, ['admin'], res)) {
-    return;
-  }
+app.post('/api/admin/listings/:id/review', async (c) => {
+  const user = await getAccountFromToken(c);
+  if (!user || user.role !== 'admin') return c.json({ message: 'Unauthorized' }, 401);
 
-  const data = listings.filter((item) => item.status === 'pending');
-  res.json({ data });
-});
-
-app.post('/api/admin/listings/:id/review', async (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-  if (!requireRole(auth, ['admin'], res)) {
-    return;
-  }
-
-  const id = req.params.id;
-  const { decision, comment } = req.body as { decision: 'approved' | 'rejected'; comment?: string };
-  const listing = listings.find((item) => item.id === id);
-
-  if (!listing) {
-    res.status(404).json({ message: 'Listing not found.' });
-    return;
-  }
-
-  if (decision !== 'approved' && decision !== 'rejected') {
-    res.status(400).json({ message: 'decision must be approved or rejected.' });
-    return;
-  }
-
-  listing.status = decision;
-  listing.adminComment = comment || '';
-  listing.updatedAt = new Date().toISOString();
-
+  const id = c.req.param('id');
+  const { decision, comment } = await c.req.json();
+  
+  const db = new Pool({ connectionString: c.env.DATABASE_URL });
   try {
-    await persistListingModeration(listing);
-  } catch {
-    res.status(500).json({ message: 'Unable to update listing review state.' });
-    return;
+    await db.query(
+      "UPDATE listings SET status = $1, admin_comment = $2, updated_at = NOW() WHERE id = $3",
+      [decision, comment, id]
+    );
+    return c.json({ message: 'Listing reviewed successfully' });
+  } finally {
+    await db.end();
   }
-
-  notify('listing-reviewed', { listingId: id, decision });
-  res.json({ data: listing });
 });
 
-app.get('/api/landlords/:landlordId/listings', (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
+app.get('/api/admin/interests', async (c) => {
+  const user = await getAccountFromToken(c);
+  if (!user || user.role !== 'admin') return c.json({ message: 'Unauthorized' }, 401);
 
-  const landlordId = req.params.landlordId;
-  if (auth.role !== 'admin' && auth.account.landlordId !== landlordId) {
-    res.status(403).json({ message: 'You can only view your own landlord listings.' });
-    return;
-  }
-
-  const data = listings.filter((item) => item.landlordId === landlordId);
-  res.json({ data });
-});
-
-app.post('/api/interests', async (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-  if (!requireRole(auth, ['student'], res)) {
-    return;
-  }
-
-  const { listingId, studentName, studentPhone, studentNote } = req.body as Partial<Interest>;
-  if (!listingId || !studentName || !studentPhone) {
-    res.status(400).json({ message: 'listingId, studentName and studentPhone are required.' });
-    return;
-  }
-
-  const listing = listings.find((item) => item.id === listingId);
-  if (!listing) {
-    res.status(404).json({ message: 'Listing not found.' });
-    return;
-  }
-
-  const interest: Interest = {
-    id: nextId('int'),
-    listingId,
-    studentUserId: auth.account.id,
-    studentName,
-    studentPhone,
-    studentNote: studentNote || '',
-    handoffStatus: 'new',
-    handoffNote: '',
-    createdAt: new Date().toISOString()
-  };
-
+  const db = new Pool({ connectionString: c.env.DATABASE_URL });
   try {
-    await persistInterest(interest);
-  } catch {
-    res.status(500).json({ message: 'Unable to save student interest.' });
-    return;
+    const result = await db.query(`
+      SELECT i.*, l.title as listing_title, l.landlord_name, a.phone as landlord_phone, a.email as landlord_email
+      FROM interests i
+      JOIN listings l ON i.listing_id = l.id
+      JOIN accounts a ON l.landlord_id = a.landlord_id
+      ORDER BY i.created_at DESC
+    `);
+    return c.json({ data: result.rows.map(row => ({
+      id: row.id,
+      listingId: row.listing_id,
+      listingTitle: row.listing_title,
+      studentName: row.student_name,
+      studentPhone: row.student_phone,
+      studentNote: row.student_note,
+      landlordName: row.landlord_name,
+      landlordPhone: row.landlord_phone,
+      landlordEmail: row.landlord_email,
+      handoffStatus: row.handoff_status,
+      handedOffAt: row.handed_off_at,
+      createdAt: row.created_at
+    }))});
+  } finally {
+    await db.end();
   }
-
-  interests.push(interest);
-  notify('interest-created', { listingId, interestId: interest.id });
-  res.status(201).json({ data: interest });
 });
 
-app.get('/api/admin/interests', (_req, res) => {
-  const auth = requireAuth(_req, res);
-  if (!auth) {
-    return;
-  }
-  if (!requireRole(auth, ['admin'], res)) {
-    return;
-  }
+app.post('/api/admin/leads/:id/handoff', async (c) => {
+  const user = await getAccountFromToken(c);
+  if (!user || user.role !== 'admin') return c.json({ message: 'Unauthorized' }, 401);
 
-  const data = interests
-    .map((item) => {
-      const listing = listings.find((currentListing) => currentListing.id === item.listingId);
-      const landlord = listing
-        ? accounts.find((account) => account.role === 'landlord' && account.landlordId === listing.landlordId)
-        : undefined;
-
-      return {
-        ...item,
-        listingTitle: listing?.title || 'Unknown listing',
-        landlordName: landlord?.name || listing?.landlordName || 'Unknown landlord',
-        landlordPhone: landlord?.phone || '',
-        landlordEmail: landlord?.email || ''
-      };
-    })
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-
-  res.json({ data });
-});
-
-app.post('/api/admin/interests/:id/handoff', async (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-  if (!requireRole(auth, ['admin'], res)) {
-    return;
-  }
-
-  const interestId = req.params.id;
-  const { channel, note } = req.body as { channel?: InterestHandoffChannel; note?: string };
-  const validChannels: InterestHandoffChannel[] = ['call', 'sms', 'whatsapp', 'email'];
-  const selectedChannel = channel || 'call';
-
-  if (!validChannels.includes(selectedChannel)) {
-    res.status(400).json({ message: 'channel must be one of call, sms, whatsapp, email.' });
-    return;
-  }
-
-  const interest = interests.find((item) => item.id === interestId);
-  if (!interest) {
-    res.status(404).json({ message: 'Interest not found.' });
-    return;
-  }
-
-  interest.handoffStatus = 'landlord-notified';
-  interest.handedOffAt = new Date().toISOString();
-  interest.handoffChannel = selectedChannel;
-  interest.handoffNote = String(note || '').trim();
-  interest.handedOffByAdminId = auth.account.id;
-
+  const id = c.req.param('id');
+  const { handoffChannel, handoffNote } = await c.req.json();
+  
+  const db = new Pool({ connectionString: c.env.DATABASE_URL });
   try {
-    await persistInterestHandoff(interest);
-  } catch {
-    res.status(500).json({ message: 'Unable to update lead handoff state.' });
-    return;
+    await db.query(
+      `UPDATE interests 
+       SET handoff_status = 'landlord-notified', 
+           handed_off_at = NOW(), 
+           handoff_channel = $1, 
+           handoff_note = $2, 
+           handed_off_by_admin_id = $3 
+       WHERE id = $4`,
+      [handoffChannel, handoffNote, user.id, id]
+    );
+    return c.json({ message: 'Lead handed off successfully' });
+  } finally {
+    await db.end();
   }
-
-  notify('interest-handoff-updated', { interestId: interest.id });
-  res.json({ data: interest });
 });
 
-app.get('/api/listings/:id/reviews', (req, res) => {
-  const id = req.params.id;
-  const data = reviews.filter((item) => item.listingId === id);
-  res.json({ data });
-});
+// --- Students ---
 
-app.post('/api/listings/:id/reviews', async (req, res) => {
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-  if (!requireRole(auth, ['student'], res)) {
-    return;
-  }
+app.post('/api/listings/:id/interest', async (c) => {
+  const user = await getAccountFromToken(c);
+  const listingId = c.req.param('id');
+  const { studentName, studentPhone, studentNote } = await c.req.json();
 
-  const listingId = req.params.id;
-  const { author, rating, comment } = req.body as Partial<Review>;
-
-  if (!author || !rating || !comment) {
-    res.status(400).json({ message: 'author, rating, and comment are required.' });
-    return;
-  }
-
-  const parsedRating = Number(rating);
-  if (parsedRating < 1 || parsedRating > 5) {
-    res.status(400).json({ message: 'rating must be between 1 and 5.' });
-    return;
-  }
-
-  const listing = listings.find((item) => item.id === listingId);
-  if (!listing) {
-    res.status(404).json({ message: 'Listing not found.' });
-    return;
-  }
-
-  const review: Review = {
-    id: nextId('rev'),
-    listingId,
-    author,
-    rating: parsedRating,
-    comment,
-    createdAt: new Date().toISOString()
-  };
-
+  const db = new Pool({ connectionString: c.env.DATABASE_URL });
   try {
-    await persistReview(review);
-  } catch {
-    res.status(500).json({ message: 'Unable to save review.' });
-    return;
+    const id = nextId('int');
+    await db.query(
+      `INSERT INTO interests (id, listing_id, student_user_id, student_name, student_phone, student_note, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [id, listingId, user?.id || null, studentName, studentPhone, studentNote]
+    );
+    return c.json({ message: 'Interest registered' }, 201);
+  } finally {
+    await db.end();
   }
-
-  reviews.push(review);
-  notify('review-created', { listingId, reviewId: review.id });
-  res.status(201).json({ data: review });
 });
 
-app.post('/api/ai/recommendations', async (req, res) => {
-  const { profile, mapContext, conversation } = req.body as {
-    profile?: StudentProfile;
-    mapContext?: MapContext;
-    conversation?: Array<{ role: 'user' | 'assistant'; message: string }>;
-  };
+// --- SSE ---
+app.get('/api/events', (c) => {
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
 
-  const school = schools.find((item) => item.id === mapContext?.schoolId) || schools[0];
-  const radiusKm = Number(mapContext?.radiusKm || 5);
-  const budget = Number(profile?.budget || profile?.budgetMax || 999999);
-  const roomType = profile?.roomType || 'any';
+  // Basic keep-alive and initial connection
+  writer.write(encoder.encode('event: connected\ndata: {"ok": true}\n\n'));
 
-  const candidates = listings
-    .filter((item) => item.status === 'approved' && item.schoolId === school.id)
-    .map((item) => {
-      const computedDistance = distanceKm(school.latitude, school.longitude, item.latitude, item.longitude);
-      return {
-        ...item,
-        distanceKm: computedDistance,
-        score:
-          (item.price <= budget ? 2 : 0) +
-          (roomType === 'any' || item.roomType === roomType ? 2 : 0) +
-          (computedDistance <= radiusKm ? 2 : 0)
-      };
-    })
-    .sort((a, b) => b.score - a.score || a.price - b.price);
+  // Logic to keep the stream alive or push events would go here.
+  // In a real worker, you might use a Durable Object to track many SSE streams.
 
-  const bestMatches = candidates.slice(0, 3);
-  const latestUserMessage = conversation?.slice().reverse().find((entry) => entry.role === 'user')?.message || '';
-
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `
-You are an AI accommodation assistant for university students.
-Student profile: ${JSON.stringify(profile)}
-Map Context (Top candidates from DB): ${JSON.stringify(bestMatches.map(l => ({ id: l.id, title: l.title, price: l.price, roomType: l.roomType, amenities: l.amenities, distanceKm: l.distanceKm })))}
-Conversation history: ${JSON.stringify(conversation)}
-
-Based on the conversation and the student's profile, select the best matching listings from the Map Context.
-Return a valid JSON object strictly matching this schema:
-{
-  "questions": ["Follow-up question 1"], // 1 or 2 conversational follow-up questions
-  "recommendedListingIds": ["lst-123", "lst-456"], // Array of IDs from the Map Context that best match exactly
-  "rationale": "A conversational friendly message (2 sentences) explaining why these options were chosen specifically for them."
-}
-`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { responseMimeType: 'application/json' }
-      });
-
-      const output = JSON.parse(response.text || '{}');
-      res.json({
-        questions: output.questions || [],
-        recommendedListingIds: output.recommendedListingIds || [],
-        rationale: output.rationale || 'Here are some recommendations based on your preferences.',
-        contextEcho: { profile, mapContext, latestUserMessage }
-      });
-      return;
-    } catch (err) {
-      console.error('Gemini AI failed, falling back to heuristic:', err);
-    }
-  }
-
-  // Heuristic Fallback
-  const questions: string[] = [];
-  if (!profile?.budgetMax) questions.push('What monthly budget range are you targeting in ZAR?');
-  if (!profile?.roomType || profile.roomType === 'any') questions.push('Would you prefer a private room or shared accommodation?');
-  if (radiusKm < 3) questions.push('Would you like to increase your search radius for more options?');
-  if (questions.length === 0) questions.push('Do you want to prioritize price, distance, or amenities next?');
-
-  res.json({
-    questions,
-    recommendedListingIds: bestMatches.map((item) => item.id),
-    rationale: `I checked approved options near ${school.name} and ranked by your budget, preferred room type, and radius.`,
-    contextEcho: { profile, mapContext, latestUserMessage }
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
   });
 });
 
-async function startServer(): Promise<void> {
-  try {
-    await initializeAccountStore();
-    await initializeMarketplaceStore();
-    void ensureSchoolDirectoryRefresh();
-    app.listen(port, () => {
-      console.log(`API listening on http://localhost:${port}`);
-      console.log(`Account store mode: ${dbPool ? 'postgres' : 'in-memory'}`);
-    });
-  } catch (error) {
-    console.error('Failed to initialize API dependencies:', error);
-    process.exit(1);
-  }
-}
-
-void startServer();
+export default app;

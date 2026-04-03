@@ -86,6 +86,10 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 - Added Playwright end-to-end test spec for mapping and role auth behaviors.
 - Implemented `/api/admin/leads/:id/handoff` endpoint and admin dashboard UI to route student leads to landlords.
 - Replaced mock AI fallback logic with a `@google/genai` Gemini integration for smart matching.
+- Implemented Cloudinary image upload pipeline to replace ephemeral local storage.
+- Added direct "WhatsApp Landlord" handoff action for admins to facilitate instant communication.
+- Automated handoff state tracking when admin initiates WhatsApp contact.
+- Formatted global CSS for consistent action buttons and WhatsApp green brand color.
 
 ## Working Rules
 - Update this file whenever priorities change, work is completed, or major decisions are made.
