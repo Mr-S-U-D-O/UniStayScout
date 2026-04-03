@@ -9,7 +9,7 @@
 
 ## In Progress
 - Foundation Sprint QA for security and data reliability
-- Add login/register validation and rate limiting
+- Begin persistence migration for listings/interests/reviews
 
 ## Done
 - Planning scope locked for MVP
@@ -27,3 +27,4 @@
 - Added password hashing and signed token verification
 - Added PostgreSQL-backed account store bootstrap with in-memory fallback
 - Added local PostGIS docker foundation and DB init SQL
+- Added login/register auth endpoint rate limiting and password validation baseline

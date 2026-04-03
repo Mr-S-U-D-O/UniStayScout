@@ -450,6 +450,15 @@ button:disabled {
   gap: 0.8rem;
 }
 
+.detail-facts {
+  margin-top: 0.5rem;
+}
+
+.full-width-btn {
+  margin-top: 1rem;
+  width: 100%;
+}
+
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

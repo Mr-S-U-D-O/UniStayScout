@@ -948,34 +948,30 @@ function App() {
           )}
 
           {role === 'admin' && (
-                  <form
-                    className="review-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      const formData = new FormData(event.currentTarget);
-                      submitReview(formData)
-                        .then(() => {
-                          (event.currentTarget as HTMLFormElement).reset();
-                        })
-                        .catch(() => setStatusMessage('Review submit failed.'));
-                    }}
-                  >
-                    <input name="author" defaultValue={studentName} placeholder="Your name" required />
-                    <input
-                      name="rating"
-                      type="number"
-                      min={1}
-                      max={5}
-                      defaultValue={5}
-                      placeholder="Rating 1-5"
-                      title="Rating from 1 to 5"
-                      required
-                    />
-                    <textarea name="comment" placeholder="Share your feedback" required />
-                    <button type="submit">Post Review</button>
-                  </form>
-                )}
-              </div>
+            <>
+              <div className="section-card">
+                <div className="section-head">
+                  <h2>Admin Moderation</h2>
+                  <p className="muted">Approve listings and monitor incoming student leads.</p>
+                </div>
+                <h3>Pending Listings</h3>
+                <div className="stack-list">
+                  {pendingListings.length === 0 && <p className="muted">No pending listings.</p>}
+                  {pendingListings.map((item) => (
+                    <article key={item.id} className="stack-card">
+                      <p>
+                        <strong>{item.title}</strong> - {item.landlordName}
+                      </p>
+                      <p>{item.description}</p>
+                      <div className="actions-row">
+                        <button
+                          type="button"
+                          onClick={() => reviewListing(item.id, 'approved', 'Approved. Listing quality meets requirements.')}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
                           className="danger outline"
                           onClick={() => reviewListing(item.id, 'rejected', 'Please add clearer photos and nearby amenities.')}
                         >
@@ -1085,8 +1081,8 @@ function App() {
                   {selectedListing.distanceKm?.toFixed(1)}km from school
                 </p>
                 <p className="muted">{selectedListing.description}</p>
-                
-                <div className="profile-fields" style={{marginTop: '0.5rem'}}>
+
+                <div className="profile-fields detail-facts">
                   <p>
                     <strong>Room:</strong> {selectedListing.roomType}
                   </p>
@@ -1099,7 +1095,11 @@ function App() {
                 </div>
 
                 {role === 'student' && (
-                  <button type="button" onClick={() => submitInterest().catch(() => setStatusMessage('Interest submit failed.'))} style={{marginTop: '1rem', width: '100%'}}>
+                  <button
+                    type="button"
+                    className="full-width-btn"
+                    onClick={() => submitInterest().catch(() => setStatusMessage('Interest submit failed.'))}
+                  >
                     I am Interested
                   </button>
                 )}

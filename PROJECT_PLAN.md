@@ -18,7 +18,7 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 ## Current Focus
 - Foundation Sprint: lock security, data integrity, and operational reliability before launch.
 - Complete auth hardening (password hashing, rate limiting, strict protected endpoints).
-- Start persistence migration plan for PostgreSQL + PostGIS.
+- Start persistence migration implementation for listings/interests/reviews in PostgreSQL + PostGIS.
 
 ## Foundation Progress (Latest)
 - Auth account storage now supports PostgreSQL mode with startup bootstrap and fallback to in-memory mode.
