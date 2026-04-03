@@ -5,12 +5,11 @@
 - Add production-grade file upload pipeline for listing media
 - Harden moderation and anti-abuse controls
 - Add end-to-end tests for role flows and map behaviors
-- Build auth and RBAC middleware for all API routes
-- Add password hashing and signed token verification
-- Add login/register validation and rate limiting
+- Add auth audit logs and suspicious login monitoring
 
 ## In Progress
-- QA pass for login/register and role-based dashboard handoff
+- Foundation Sprint QA for security and data reliability
+- Add login/register validation and rate limiting
 
 ## Done
 - Planning scope locked for MVP
@@ -24,3 +23,5 @@
 - Implemented account login/register UI with role-based access routing
 - Implemented auth API endpoints (register/login/demo accounts)
 - Implemented role-based dashboard summary API and UI cards
+- Built auth and RBAC middleware for protected API routes
+- Added password hashing and signed token verification

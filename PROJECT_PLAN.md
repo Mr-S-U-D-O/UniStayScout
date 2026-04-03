@@ -16,9 +16,9 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 5. Launch Readiness: QA, seed data, operational checks
 
 ## Current Focus
-- Validate all student, landlord, and admin journeys in live development mode.
-- Stabilize real-time refresh behavior under multi-action usage.
-- Prepare next increment: persistent database and authentication hardening.
+- Foundation Sprint: lock security, data integrity, and operational reliability before launch.
+- Complete auth hardening (password hashing, rate limiting, strict protected endpoints).
+- Start persistence migration plan for PostgreSQL + PostGIS.
 
 ## Auth and Dashboard Plan (Detailed)
 1. Identity Model
@@ -40,9 +40,9 @@ Build a map-first, AI-assisted accommodation platform for students centered arou
 
 4. Security Milestones
 - M1 (done): role-gated frontend screens + role-based summary API.
-- M2 (next): auth middleware and protected API endpoints.
-- M3 (next): password hashing and token verification.
-- M4 (next): login throttling and audit logs.
+- M2 (done): auth middleware and protected API endpoints.
+- M3 (done): password hashing and token verification.
+- M4 (in progress): login throttling and audit logs.
 
 5. Data Persistence Migration
 - Preserve endpoint contracts while moving from in-memory to PostgreSQL.

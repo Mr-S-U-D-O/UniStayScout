@@ -20,3 +20,8 @@
 - Added session persistence on frontend and role-locked post-login workspace
 - Added auth endpoints (register/login/demo accounts) on API
 - Added role-based dashboard summary endpoint and summary cards UI
+
+## 0.4.0 - 2026-04-03
+- Added bcrypt-based password hashing for seeded and newly registered accounts
+- Added auth endpoint rate limiting for login and registration routes
+- Hardened token-based auth contract alignment in API docs

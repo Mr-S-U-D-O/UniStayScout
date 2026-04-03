@@ -11,15 +11,16 @@
 - GET /api/auth/demo-accounts
 - POST /api/auth/register
 - POST /api/auth/login
+- Authenticated routes require `Authorization: Bearer <token>`
 
 ## Dashboard Summary
-- GET /api/dashboard-summary?userId=
+- GET /api/dashboard-summary
 
 ## Schools
 - GET /api/schools
 
 ## Listings
-- GET /api/listings?schoolId=&radiusKm=&role=&landlordId=
+- GET /api/listings?schoolId=&radiusKm=&minPrice=&maxPrice=&roomType=&verifiedOnly=&sortBy=&amenities=
 - POST /api/listings
 
 ## Landlord

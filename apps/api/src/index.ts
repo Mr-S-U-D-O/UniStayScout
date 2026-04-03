@@ -2,6 +2,8 @@ import cors from 'cors';
 import express from 'express';
 import type { Response } from 'express';
 import crypto from 'crypto';
+import { compareSync, hashSync } from 'bcryptjs';
+import { Pool } from 'pg';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -78,15 +80,31 @@ type Account = {
   name: string;
   email: string;
   phone: string;
-  password: string;
+  passwordHash: string;
   role: AccountRole;
   landlordId?: string;
   createdAt: string;
 };
 
+type AuthRateBucket = {
+  count: number;
+  resetAt: number;
+};
+
 type AuthContext = {
   account: Account;
   role: AccountRole;
+};
+
+type AccountRow = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  password_hash: string;
+  role: AccountRole;
+  landlord_id: string | null;
+  created_at: string;
 };
 
 const schools: School[] = [
@@ -244,13 +262,13 @@ const listings: Listing[] = [
 const interests: Interest[] = [];
 const reviews: Review[] = [];
 
-const accounts: Account[] = [
+const seedAccounts: Account[] = [
   {
     id: 'usr-admin-1',
     name: 'System Admin',
     email: 'admin@unistayscout.local',
     phone: '+27 11 000 0001',
-    password: 'admin123',
+    passwordHash: hashSync('admin123', 10),
     role: 'admin',
     createdAt: new Date().toISOString()
   },
@@ -259,7 +277,7 @@ const accounts: Account[] = [
     name: 'Bright Rooms SA',
     email: 'landlord@unistayscout.local',
     phone: '+27 11 000 0002',
-    password: 'landlord123',
+    passwordHash: hashSync('landlord123', 10),
     role: 'landlord',
     landlordId: 'landlord-1',
     createdAt: new Date().toISOString()
@@ -269,15 +287,107 @@ const accounts: Account[] = [
     name: 'Lerato Student',
     email: 'student@unistayscout.local',
     phone: '+27 71 000 1234',
-    password: 'student123',
+    passwordHash: hashSync('student123', 10),
     role: 'student',
     createdAt: new Date().toISOString()
   }
 ];
 
+let accounts: Account[] = [...seedAccounts];
+
 const sseClients = new Set<Response>();
+const authRateBuckets = new Map<string, AuthRateBucket>();
 const tokenSecret = process.env.AUTH_TOKEN_SECRET || 'unistayscout-dev-secret';
 const tokenTtlSeconds = 60 * 60 * 12;
+const databaseUrl = process.env.DATABASE_URL;
+const dbPool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : null;
+
+function fromAccountRow(row: AccountRow): Account {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    passwordHash: row.password_hash,
+    role: row.role,
+    landlordId: row.landlord_id || undefined,
+    createdAt: row.created_at
+  };
+}
+
+async function initializeAccountStore(): Promise<void> {
+  if (!dbPool) {
+    return;
+  }
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      phone TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('student', 'landlord', 'admin')),
+      landlord_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  const countResult = await dbPool.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM accounts;');
+  const rowCount = Number(countResult.rows[0]?.count || '0');
+
+  if (rowCount === 0) {
+    for (const account of seedAccounts) {
+      await dbPool.query(
+        `
+        INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+        [
+          account.id,
+          account.name,
+          account.email,
+          account.phone,
+          account.passwordHash,
+          account.role,
+          account.landlordId || null,
+          account.createdAt
+        ]
+      );
+    }
+  }
+
+  const rowsResult = await dbPool.query<AccountRow>(`
+    SELECT id, name, email, phone, password_hash, role, landlord_id, created_at
+    FROM accounts
+    ORDER BY created_at ASC;
+  `);
+
+  accounts = rowsResult.rows.map(fromAccountRow);
+}
+
+async function persistAccount(account: Account): Promise<void> {
+  if (!dbPool) {
+    return;
+  }
+
+  await dbPool.query(
+    `
+      INSERT INTO accounts (id, name, email, phone, password_hash, role, landlord_id, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+    `,
+    [
+      account.id,
+      account.name,
+      account.email,
+      account.phone,
+      account.passwordHash,
+      account.role,
+      account.landlordId || null,
+      account.createdAt
+    ]
+  );
+}
 
 function nextId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -408,11 +518,57 @@ function requireRole(
   return false;
 }
 
+function enforceAuthRateLimit(
+  req: express.Request,
+  res: express.Response,
+  keySuffix: string,
+  maxRequests: number,
+  windowMs: number
+): boolean {
+  const now = Date.now();
+  const ip = req.ip || 'unknown';
+  const key = `${ip}:${keySuffix}`;
+  const existing = authRateBuckets.get(key);
+
+  if (!existing || now > existing.resetAt) {
+    authRateBuckets.set(key, {
+      count: 1,
+      resetAt: now + windowMs
+    });
+    return true;
+  }
+
+  if (existing.count >= maxRequests) {
+    const retryAfter = Math.ceil((existing.resetAt - now) / 1000);
+    res.setHeader('Retry-After', String(Math.max(retryAfter, 1)));
+    res.status(429).json({ message: 'Too many auth requests. Please try again shortly.' });
+    return false;
+  }
+
+  existing.count += 1;
+  authRateBuckets.set(key, existing);
+  return true;
+}
+
 app.use(cors());
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'api', timestamp: new Date().toISOString() });
+});
+
+app.get('/health/db', async (_req, res) => {
+  if (!dbPool) {
+    res.json({ status: 'not-configured', database: 'postgres', connected: false });
+    return;
+  }
+
+  try {
+    await dbPool.query('SELECT 1;');
+    res.json({ status: 'ok', database: 'postgres', connected: true });
+  } catch {
+    res.status(500).json({ status: 'error', database: 'postgres', connected: false });
+  }
 });
 
 app.get('/api/events', (req, res) => {
@@ -442,7 +598,11 @@ app.get('/api/auth/demo-accounts', (_req, res) => {
   });
 });
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
+  if (!enforceAuthRateLimit(req, res, 'register', 8, 15 * 60 * 1000)) {
+    return;
+  }
+
   const { name, email, phone, password, role } = req.body as {
     name?: string;
     email?: string;
@@ -453,6 +613,11 @@ app.post('/api/auth/register', (req, res) => {
 
   if (!name || !email || !phone || !password || !role) {
     res.status(400).json({ message: 'name, email, phone, password, and role are required.' });
+    return;
+  }
+
+  if (password.length < 8) {
+    res.status(400).json({ message: 'Password must be at least 8 characters.' });
     return;
   }
 
@@ -475,11 +640,18 @@ app.post('/api/auth/register', (req, res) => {
     name: name.trim(),
     email: normalizedEmail,
     phone: phone.trim(),
-    password,
+    passwordHash: hashSync(password, 10),
     role,
     landlordId: role === 'landlord' ? nextId('landlord') : undefined,
     createdAt: now
   };
+
+  try {
+    await persistAccount(account);
+  } catch {
+    res.status(500).json({ message: 'Unable to save account.' });
+    return;
+  }
 
   accounts.push(account);
   notify('account-created', { accountId: account.id, role: account.role });
@@ -491,14 +663,24 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 app.post('/api/auth/login', (req, res) => {
+  if (!enforceAuthRateLimit(req, res, 'login', 12, 15 * 60 * 1000)) {
+    return;
+  }
+
   const { email, password } = req.body as { email?: string; password?: string };
   if (!email || !password) {
     res.status(400).json({ message: 'email and password are required.' });
     return;
   }
 
-  const account = accounts.find((item) => item.email === email.trim().toLowerCase() && item.password === password);
+  const account = accounts.find((item) => item.email === email.trim().toLowerCase());
   if (!account) {
+    res.status(401).json({ message: 'Invalid credentials.' });
+    return;
+  }
+
+  const passwordMatches = compareSync(password, account.passwordHash);
+  if (!passwordMatches) {
     res.status(401).json({ message: 'Invalid credentials.' });
     return;
   }
@@ -884,6 +1066,17 @@ app.post('/api/ai/recommendations', (req, res) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`API listening on http://localhost:${port}`);
-});
+async function startServer(): Promise<void> {
+  try {
+    await initializeAccountStore();
+    app.listen(port, () => {
+      console.log(`API listening on http://localhost:${port}`);
+      console.log(`Account store mode: ${dbPool ? 'postgres' : 'in-memory'}`);
+    });
+  } catch (error) {
+    console.error('Failed to initialize API dependencies:', error);
+    process.exit(1);
+  }
+}
+
+void startServer();
