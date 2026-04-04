@@ -13,8 +13,8 @@ import {
 
 const amenityOptions = ['wifi', 'security', 'laundry', 'parking', 'backup-power'];
 const lifestyleTags: LifestyleTag[] = ['quiet', 'social', 'night-owl', 'early-riser', 'pet-friendly', 'study-focused'];
-const lifestyleEmoji: Record<LifestyleTag, string> = {
-  quiet: '🤫', social: '🎉', 'night-owl': '🦉', 'early-riser': '🌅', 'pet-friendly': '🐾', 'study-focused': '📚',
+const lifestyleLabels: Record<LifestyleTag, string> = {
+  quiet: 'Quiet', social: 'Social', 'night-owl': 'Night Owl', 'early-riser': 'Early Riser', 'pet-friendly': 'Pet Friendly', 'study-focused': 'Study Focused',
 };
 
 type Props = {
@@ -132,17 +132,17 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
               <div className="ob-step">
                 <div className="ob-icon-badge"><IconGraduationCap size={28} /></div>
                 <h3>Welcome, {authUser.name}</h3>
-                <p className="muted">Set up your profile in 2 minutes so the AI can find the perfect accommodation for you.</p>
+                <p className="muted">Please complete your profile to enable personalized accommodation recommendations.</p>
                 <AvatarSection />
                 <label>
-                  A bit about you (optional)
+                  Profile Description (Optional)
                   <textarea
                     value={studentProfile.bio}
                     onChange={(e) => setStudentProfile((p) => ({ ...p, bio: e.target.value }))}
-                    placeholder="e.g. 2nd year engineering student, looking for a quiet place close to campus…"
+                    placeholder="e.g. 2nd year engineering student, seeking a quiet environment near campus."
                   />
                 </label>
-                <button type="button" onClick={() => setStudentStep('university')}>Let's go →</button>
+                <button type="button" onClick={() => setStudentStep('university')}>Continue</button>
               </div>
             )}
 
@@ -183,8 +183,8 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                   </div>
                 </div>
                 <div className="ob-nav">
-                  <button type="button" className="outline" onClick={() => setStudentStep('welcome')}>← Back</button>
-                  <button type="button" onClick={() => setStudentStep('budget')}>Next →</button>
+                  <button type="button" className="outline" onClick={() => setStudentStep('welcome')}>Back</button>
+                  <button type="button" onClick={() => setStudentStep('budget')}>Continue</button>
                 </div>
               </div>
             )}
@@ -236,7 +236,6 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                           className={`room-type-card ${studentProfile.roomType === rt ? 'active' : ''}`}
                           onClick={() => setStudentProfile((p) => ({ ...p, roomType: rt }))}
                         >
-                          <span>{rt === 'private' ? '🚪' : rt === 'shared' ? '🛏️' : '🏠'}</span>
                           <strong>{rt === 'any' ? 'No preference' : rt.charAt(0).toUpperCase() + rt.slice(1)}</strong>
                         </button>
                       ))}
@@ -255,15 +254,15 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                             checked={studentProfile.transportMode === t}
                             onChange={() => setStudentProfile((p) => ({ ...p, transportMode: t }))}
                           />
-                          <span>{t === 'walking' ? '🚶 Walking' : t === 'public-transport' ? '🚌 Public Transport' : '🚗 Own Car'}</span>
+                          <span>{t === 'walking' ? 'Walking' : t === 'public-transport' ? 'Public Transport' : 'Own Car'}</span>
                         </label>
                       ))}
                     </div>
                   </label>
                 </div>
                 <div className="ob-nav">
-                  <button type="button" className="outline" onClick={() => setStudentStep('university')}>← Back</button>
-                  <button type="button" onClick={() => setStudentStep('lifestyle')}>Next →</button>
+                  <button type="button" className="outline" onClick={() => setStudentStep('university')}>Back</button>
+                  <button type="button" onClick={() => setStudentStep('lifestyle')}>Continue</button>
                 </div>
               </div>
             )}
@@ -282,7 +281,7 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                         className={`chip ${studentProfile.lifestyle.includes(tag) ? 'active' : ''}`}
                         onClick={() => toggleLifestyle(tag)}
                       >
-                        {lifestyleEmoji[tag]} {tag}
+                        {lifestyleLabels[tag]}
                       </div>
                     ))}
                   </div>
@@ -296,7 +295,7 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                         className={`security-btn ${studentProfile.securityPriority === s ? 'active' : ''}`}
                         onClick={() => setStudentProfile((p) => ({ ...p, securityPriority: s }))}
                       >
-                        {s === 'low' ? '🟢 Low' : s === 'medium' ? '🟡 Medium' : '🔴 High'}
+                        {s === 'low' ? 'Low' : s === 'medium' ? 'Medium' : 'High'}
                       </button>
                     ))}
                   </div>
@@ -324,8 +323,8 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                   </label>
                 </div>
                 <div className="ob-nav">
-                  <button type="button" className="outline" onClick={() => setStudentStep('budget')}>← Back</button>
-                  <button type="button" onClick={() => setStudentStep('done')}>Almost done →</button>
+                  <button type="button" className="outline" onClick={() => setStudentStep('budget')}>Back</button>
+                  <button type="button" onClick={() => setStudentStep('done')}>Finish Setup</button>
                 </div>
               </div>
             )}
@@ -342,7 +341,7 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                   <div className="ob-summary-row"><span>Transport</span><strong>{studentProfile.transportMode}</strong></div>
                   <div className="ob-summary-row"><span>Security</span><strong>{studentProfile.securityPriority}</strong></div>
                 </div>
-                <button type="button" onClick={finishStudent}>Enter UniStayScout →</button>
+                <button type="button" onClick={finishStudent}>Complete Profile</button>
               </div>
             )}
           </motion.div>
@@ -378,7 +377,7 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                     placeholder="e.g. I manage 3 residential properties near UJ with 24h security and reliable internet…"
                   />
                 </label>
-                <button type="button" onClick={() => setLandlordStep('business')}>Next →</button>
+                <button type="button" onClick={() => setLandlordStep('business')}>Continue</button>
               </div>
             )}
 
@@ -418,8 +417,8 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                   </label>
                 </div>
                 <div className="ob-nav">
-                  <button type="button" className="outline" onClick={() => setLandlordStep('welcome')}>← Back</button>
-                  <button type="button" onClick={() => setLandlordStep('contact')}>Next →</button>
+                  <button type="button" className="outline" onClick={() => setLandlordStep('welcome')}>Back</button>
+                  <button type="button" onClick={() => setLandlordStep('contact')}>Continue</button>
                 </div>
               </div>
             )}
@@ -439,8 +438,8 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                   </label>
                 </div>
                 <div className="ob-nav">
-                  <button type="button" className="outline" onClick={() => setLandlordStep('business')}>← Back</button>
-                  <button type="button" onClick={() => setLandlordStep('done')}>Almost done →</button>
+                  <button type="button" className="outline" onClick={() => setLandlordStep('business')}>Back</button>
+                  <button type="button" onClick={() => setLandlordStep('done')}>Finish Setup</button>
                 </div>
               </div>
             )}
@@ -450,7 +449,7 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
               <div className="ob-icon-badge ob-done-badge"><IconCheck size={28} /></div>
               <h3>Profile ready</h3>
                 <p className="muted">Students can now see your landlord profile when viewing your listings.</p>
-                <button type="button" onClick={finishLandlord}>Enter Dashboard →</button>
+                <button type="button" onClick={finishLandlord}>Complete Profile</button>
               </div>
             )}
           </motion.div>
@@ -484,7 +483,7 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                   placeholder="Your role and responsibilities…"
                 />
               </label>
-              <button type="button" onClick={() => setAdminStep('department')}>Next →</button>
+              <button type="button" onClick={() => setAdminStep('department')}>Continue</button>
             </div>
           )}
           {adminStep === 'department' && (
@@ -500,8 +499,8 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
                 />
               </label>
               <div className="ob-nav">
-                <button type="button" className="outline" onClick={() => setAdminStep('welcome')}>← Back</button>
-                <button type="button" onClick={() => setAdminStep('done')}>Done →</button>
+                <button type="button" className="outline" onClick={() => setAdminStep('welcome')}>Back</button>
+                <button type="button" onClick={() => setAdminStep('done')}>Finish Setup</button>
               </div>
             </div>
           )}
@@ -510,7 +509,7 @@ export function OnboardingWizard({ authUser, onComplete, onSkip }: Props) {
             <div className="ob-icon-badge ob-done-badge"><IconCheck size={28} /></div>
             <h3>Ready to moderate</h3>
               <p className="muted">Your admin profile is set up.</p>
-              <button type="button" onClick={finishAdmin}>Enter Admin Panel →</button>
+              <button type="button" onClick={finishAdmin}>Complete Profile</button>
             </div>
           )}
         </motion.div>
